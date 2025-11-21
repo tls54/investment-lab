@@ -43,15 +43,31 @@ Financial analysis platform for pricing assets in arbitrary denominations and ge
 - Query parameters for asset types and data sources
 
 **Forecast Service (Partial)** ⚠️
-- GBM model implementation (backend/src/forecast_service/models/gbm.py:1)
+
+*GBM Forecasting - FULLY FUNCTIONAL* ✅
+- Complete GBM model implementation (backend/src/forecast_service/models/gbm.py:1)
   - Maximum Likelihood Estimation calibration (gbm.py:92)
   - PyTorch GPU-accelerated Monte Carlo simulation (gbm.py:141)
+  - Multi-platform GPU support: CUDA (NVIDIA) + MPS (Apple Silicon M1/M2/M3)
   - CPU fallback when GPU unavailable
+  - Device selection utilities (backend/src/forecast_service/device_utils.py:1)
   - Full path or terminal value simulation
   - Distribution statistics (mean, median, percentiles, VaR, CVaR)
   - Sample path generation for visualization (gbm.py:302)
-- Forecast API endpoints (backend/src/api/routers/forecasts.py)
-- Configuration management (backend/src/core/config.py:1)
+- Working API endpoints (backend/src/api/routers/forecasts.py)
+  - `POST /api/forecast/gbm` - Full configuration
+  - `GET /api/forecast/gbm/{symbol}` - Quick forecast with defaults
+  - Request/response validation with Pydantic
+
+*What Makes It "Partial":*
+- ❌ **base.py** - Empty (no abstract forecaster class)
+- ❌ **calibration.py** - Empty (calibration logic embedded in gbm.py for now)
+- ❌ **Heston model** - Not implemented (only in Research/)
+- ❌ **Celery background tasks** - Long forecasts block HTTP requests
+- ❌ **Redis caching** - No forecast result caching
+- ❌ **Progress tracking** - Can't monitor long-running forecasts
+
+*Summary:* GBM works end-to-end, but lacks architectural scaffolding for multiple models and production-grade async processing.
 
 **Research Artifacts** ✅
 - GBM and Heston demo notebooks (Research/heston_and_gbm.py)
@@ -69,11 +85,13 @@ Financial analysis platform for pricing assets in arbitrary denominations and ge
 
 ### Backend
 - Database layer (PostgreSQL/TimescaleDB)
-- Redis caching
+- Redis caching (for prices and forecast results)
 - WebSocket streaming for real-time prices
-- Celery background tasks
-- Heston model (calibration WIP in research)
-- Advanced models (GARCH, Jump diffusion, etc.)
+- Celery background tasks (for long-running forecasts)
+- Base forecaster abstract class (base.py is empty)
+- Standalone calibration utilities (calibration.py is empty, logic in gbm.py)
+- Heston model (only in Research/, not production-ready)
+- Advanced models (GARCH, Jump diffusion, regime-switching, etc.)
 - Portfolio analysis
 - Options pricing
 - Backtesting engine
@@ -142,24 +160,26 @@ investment-lab/
 
 ## Key Capabilities (Working Now)
 
-1. **Multi-source price fetching**
+1. **Multi-source price fetching** ✅
    - Stocks, ETFs, crypto, commodities
    - Automatic source selection
    - Rate limit handling
    - Multi-currency crypto support
 
-2. **Denominational pricing**
+2. **Denominational pricing** ✅
    - Price any asset in terms of any other
    - Current and historical conversions
    - Currency validation
    - Statistical summaries
 
-3. **GBM forecasting**
+3. **GBM price forecasting** ✅ FULLY FUNCTIONAL
    - GPU-accelerated Monte Carlo (10k-1M paths)
-   - Automatic parameter calibration
-   - Distribution analysis
-   - Risk metrics (VaR, CVaR)
-   - Sample path visualization
+   - Automatic MLE parameter calibration
+   - Distribution analysis (mean, median, percentiles)
+   - Risk metrics (VaR, CVaR, probability of gain)
+   - Sample path generation for charts
+   - Two API endpoints (POST with full config, GET with defaults)
+   - Works for any stock/ETF/crypto via yfinance
 
 ---
 
@@ -172,18 +192,25 @@ investment-lab/
    - Build forecast configurator
    - Connect to existing APIs
 
-2. **Complete Heston Model** (Week 2-3 effort)
+2. **Forecast Service Architecture** (Week 1-2 effort)
+   - Create abstract base forecaster class (base.py)
+   - Refactor calibration into standalone utilities (calibration.py)
+   - Add Redis caching for forecast results
+   - Implement Celery tasks for long-running forecasts
+
+3. **Complete Heston Model** (Week 2-3 effort)
+   - Port from Research/ notebooks to production code
    - Finish calibration (moments + optimization)
    - Test against benchmarks
    - Add to API endpoints
 
-3. **Infrastructure** (Week 1-2 effort)
+4. **Infrastructure** (Week 1-2 effort)
    - Docker Compose for local dev
    - Redis caching layer
    - Database schema
    - Basic CI/CD
 
-4. **Real-time Features** (Week 2-3 effort)
+5. **Real-time Features** (Week 2-3 effort)
    - WebSocket price streaming
    - Live chart updates
    - Connection management
@@ -196,7 +223,7 @@ investment-lab/
 - Python 3.13
 - FastAPI
 - Pydantic V2
-- PyTorch (GPU support)
+- PyTorch (GPU support: CUDA + MPS for Apple Silicon)
 - NumPy, Pandas, SciPy
 - httpx (async HTTP)
 - yfinance (data)
@@ -222,9 +249,17 @@ investment-lab/
 ## Performance Notes
 
 - GBM simulation: ~50ms for 10k paths on GPU vs ~500ms on CPU
+  - Supports CUDA (NVIDIA GPUs) and MPS (Apple Silicon M1/M2/M3)
+  - Automatic device selection with fallback to CPU
 - yfinance: No rate limits, free, no API key
 - Alpha Vantage: 500 calls/day, 5 calls/min (free tier)
 - Multi-currency support enables global market analysis
+
+**To test GPU on your Mac:**
+```bash
+cd backend
+python test_device.py  # Will show if MPS is being used
+```
 
 ---
 

@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from typing import Optional, List, Dict
 import logging
 
+from ..device_utils import select_device
+
 logger = logging.getLogger(__name__)
 
 
@@ -75,14 +77,12 @@ class GBMModel:
     def __init__(self, use_gpu: bool = True):
         """
         Initialize GBM model.
-        
+
         Args:
             use_gpu: Use GPU if available (default: True)
+                Supports CUDA (NVIDIA), MPS (Apple Silicon), or CPU fallback
         """
-        self.device = torch.device(
-            "cuda" if use_gpu and torch.cuda.is_available() else "cpu"
-        )
-        logger.info(f"GBM model initialized on device: {self.device}")
+        self.device = select_device(use_gpu=use_gpu, verbose=True)
     
     def calibrate(
         self,

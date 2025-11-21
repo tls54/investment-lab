@@ -25,6 +25,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+test_device.py
 
 # Testing
 .pytest_cache/

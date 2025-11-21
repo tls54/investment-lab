@@ -22,9 +22,10 @@ pytest -v
 
 ```
 tests/
-├── conftest.py              # Pytest fixtures and configuration
-├── test_models.py           # Tests for data models (Price, HistoricalPrice)
-└── test_base_fetcher.py     # Tests for base fetcher logic (caching, rate limiting)
+├── conftest.py                  # Pytest fixtures and configuration
+├── test_models.py               # Tests for data models (Price, HistoricalPrice)
+├── test_base_fetcher.py         # Tests for base fetcher logic (caching, rate limiting)
+└── test_crypto_currencies.py    # Tests for multi-currency crypto pricing
 ```
 
 ## What's Tested
@@ -43,11 +44,36 @@ tests/
 - Asset type support checking
 - Abstract base class requirements
 
-### ❌ Not Tested (External APIs)
-- Alpha Vantage integration
-- yfinance integration
+### ⚠️ `test_crypto_currencies.py` (Integration Tests)
+**Note:** These tests require network access to yfinance API.
 
-These require network access, so we test them manually or with integration tests.
+Tests covered:
+- Current price in multiple currencies (USD, EUR, GBP, JPY, AUD, CAD)
+- Default currency behavior (USD)
+- Unsupported currency error handling
+- Case-insensitive currency codes
+- Historical data with custom currencies
+- Currency validation and edge cases
+- Documentation of known supported currencies
+- Placeholder tests for future triangular conversion feature
+
+**Run currency tests:**
+```bash
+# Run all currency tests
+pytest tests/test_crypto_currencies.py -v
+
+# Run only tests for known supported currencies
+pytest tests/test_crypto_currencies.py::TestCryptoCurrentPrice::test_supported_currencies -v
+
+# Skip tests that require network
+pytest -m "not integration"
+```
+
+### ❌ Not Tested (External APIs)
+- Alpha Vantage integration (manual testing)
+
+### 🔜 Future Tests (Marked as Skip)
+- Triangular currency conversion (BTC-INR via BTC-USD × USD-INR)
 
 ## Test Coverage
 

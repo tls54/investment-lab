@@ -92,6 +92,9 @@ class YFinanceFetcher(AssetFetcher):
         """
         Fetch current price for a stock/ETF/crypto.
 
+        Tries direct pair first (e.g., BTC-INR), falls back to triangular
+        conversion via USD if direct pair is not available.
+
         Args:
             symbol: Stock/crypto symbol (e.g., "AAPL", "BTC")
             asset_type: STOCK, ETF, or CRYPTO
@@ -99,6 +102,73 @@ class YFinanceFetcher(AssetFetcher):
 
         Returns:
             Price object with current data
+        """
+        try:
+            # Try direct pair first (most accurate)
+            return await self._fetch_price_direct(symbol, asset_type, currency)
+
+        except SymbolNotFoundError:
+            # If direct pair fails, try triangular conversion
+            if self._should_try_triangular(asset_type, currency):
+                logger.info(
+                    f"Direct pair {symbol}-{currency} not found, "
+                    f"attempting triangular conversion via USD"
+                )
+                return await self._fetch_price_triangular(symbol, asset_type, currency)
+            else:
+                # Re-raise if triangular not applicable
+                raise
+
+    def _should_try_triangular(
+        self,
+        asset_type: Optional[AssetType],
+        currency: str
+    ) -> bool:
+        """
+        Determine if triangular conversion should be attempted.
+
+        Triangular conversion is only applicable when:
+        1. Asset is crypto (stocks/ETFs are exchange-specific)
+        2. Currency is not USD (prevents infinite loop)
+
+        Args:
+            asset_type: Type of asset
+            currency: Target currency
+
+        Returns:
+            True if triangular conversion should be attempted
+        """
+        # Only for crypto
+        if asset_type != AssetType.CRYPTO:
+            return False
+
+        # Don't try if already USD (would create loop)
+        if currency.upper().strip() == "USD":
+            return False
+
+        return True
+
+    async def _fetch_price_direct(
+        self,
+        symbol: str,
+        asset_type: Optional[AssetType] = None,
+        currency: str = "USD"
+    ) -> Price:
+        """
+        Fetch price directly from yfinance (without triangular conversion).
+
+        This is the original fetch_price implementation.
+
+        Args:
+            symbol: Stock/crypto symbol
+            asset_type: STOCK, ETF, or CRYPTO
+            currency: Fiat currency for crypto prices
+
+        Returns:
+            Price object with current data
+
+        Raises:
+            SymbolNotFoundError: If symbol/pair not found
         """
         original_symbol = symbol.upper().strip()
 
@@ -152,6 +222,127 @@ class YFinanceFetcher(AssetFetcher):
         except Exception as e:
             logger.error(f"Error fetching price for {original_symbol}: {e}")
             raise APIError(self.name, 0, str(e))
+
+    async def _fetch_forex_rate(
+        self,
+        from_currency: str,
+        to_currency: str
+    ) -> float:
+        """
+        Fetch forex exchange rate from yfinance.
+
+        yfinance uses format: {FROM}{TO}=X for forex pairs
+        Example: USDINR=X for USD to INR rate
+
+        Args:
+            from_currency: Source currency (e.g., "USD")
+            to_currency: Target currency (e.g., "INR")
+
+        Returns:
+            Exchange rate (e.g., 83.12 means 1 USD = 83.12 INR)
+
+        Raises:
+            APIError: If forex rate cannot be fetched
+        """
+        from_currency = from_currency.upper().strip()
+        to_currency = to_currency.upper().strip()
+
+        # yfinance forex format: {FROM}{TO}=X
+        forex_symbol = f"{from_currency}{to_currency}=X"
+
+        try:
+            ticker = yf.Ticker(forex_symbol)
+            info = ticker.info
+
+            # Get current rate
+            rate = info.get('regularMarketPrice')
+
+            if rate is None or rate <= 0:
+                raise ValueError(f"Invalid forex rate: {rate}")
+
+            logger.info(f"Forex rate {from_currency}/{to_currency}: {rate}")
+            return float(rate)
+
+        except Exception as e:
+            logger.error(f"Failed to fetch forex rate {forex_symbol}: {e}")
+            raise APIError(
+                self.name,
+                0,
+                f"Unable to fetch forex rate {from_currency}/{to_currency}: {e}"
+            )
+
+    async def _fetch_price_triangular(
+        self,
+        symbol: str,
+        asset_type: AssetType,
+        currency: str
+    ) -> Price:
+        """
+        Fetch price using triangular conversion via USD.
+
+        Example: BTC-INR = BTC-USD × USD-INR
+
+        This is used as a fallback when direct pair (e.g., BTC-INR) is not
+        available from yfinance.
+
+        Args:
+            symbol: Crypto symbol (e.g., "BTC")
+            asset_type: Should be CRYPTO
+            currency: Target currency (e.g., "INR")
+
+        Returns:
+            Price object with calculated price in target currency
+
+        Raises:
+            SymbolNotFoundError: If triangular conversion fails
+        """
+        logger.info(
+            f"Triangular conversion: {symbol}-{currency} "
+            f"via {symbol}-USD × USD-{currency}"
+        )
+
+        try:
+            # Step 1: Fetch crypto price in USD
+            crypto_usd = await self._fetch_price_direct(symbol, asset_type, "USD")
+
+            # Step 2: Fetch forex rate USD → target currency
+            forex_rate = await self._fetch_forex_rate("USD", currency)
+
+            # Step 3: Calculate price in target currency
+            calculated_price = crypto_usd.price * forex_rate
+
+            logger.info(
+                f"Triangular conversion successful: "
+                f"{symbol} ${crypto_usd.price:.2f} × {forex_rate:.4f} "
+                f"= {calculated_price:.2f} {currency}"
+            )
+
+            # Step 4: Build Price object with calculated values
+            # Convert all USD values to target currency
+            return Price(
+                symbol=symbol,
+                asset_type=asset_type,
+                price=calculated_price,
+                timestamp=datetime.now(),
+                currency=currency,
+                volume=crypto_usd.volume,  # Volume stays the same
+                open=crypto_usd.open * forex_rate if crypto_usd.open else None,
+                high_24h=crypto_usd.high_24h * forex_rate if crypto_usd.high_24h else None,
+                low_24h=crypto_usd.low_24h * forex_rate if crypto_usd.low_24h else None,
+                close=crypto_usd.close * forex_rate if crypto_usd.close else None,
+                source=f"{self.name} (triangular)",  # Mark as triangular
+                bid=crypto_usd.bid * forex_rate if crypto_usd.bid else None,
+                ask=crypto_usd.ask * forex_rate if crypto_usd.ask else None
+            )
+
+        except Exception as e:
+            logger.error(
+                f"Triangular conversion failed for {symbol}-{currency}: {e}"
+            )
+            raise SymbolNotFoundError(
+                f"{symbol} with currency {currency}",
+                self.name
+            )
     
     async def fetch_historical(
         self,
