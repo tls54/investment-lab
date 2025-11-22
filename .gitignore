@@ -26,6 +26,7 @@ wheels/
 .installed.cfg
 *.egg
 test_device.py
+*.png
 
 # Testing
 .pytest_cache/
