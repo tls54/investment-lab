@@ -5,6 +5,8 @@ services:
       dockerfile: Dockerfile
     container_name: investment-lab-backend
     restart: unless-stopped
+    env_file:
+      - ./backend/.env
     environment:
       - ENVIRONMENT=production
       - DEBUG=false

@@ -16,7 +16,7 @@ from datetime import datetime
 API_BASE = "http://localhost:8000/api"
 
 
-def forecast_and_plot(symbol="AAPL", horizon_days=30, n_paths=50000):
+def forecast_and_plot(symbol="SPY", horizon_days=30, n_paths=50000):
     """
     Fetch forecast and create visualizations.
     
@@ -200,7 +200,7 @@ def create_plots(data, symbol, horizon_days):
     plt.show()
 
 
-def compare_horizons(symbol="AAPL", horizons=[7, 30, 90]):
+def compare_horizons(symbol="SPY", horizons=[7, 30, 90]):
     """Compare forecasts at different time horizons."""
     print(f"\n{'='*60}")
     print(f"Comparing Time Horizons for {symbol}")
@@ -266,10 +266,10 @@ def compare_horizons(symbol="AAPL", horizons=[7, 30, 90]):
 
 if __name__ == "__main__":
     # Demo 1: Single forecast with comprehensive plots
-    forecast_and_plot("AAPL", horizon_days=30, n_paths=50000)
+    forecast_and_plot("VUSA.L", horizon_days=30, n_paths=50000)
     
     # Demo 2: Compare different time horizons
-    compare_horizons("AAPL", horizons=[7, 30, 90])
+    compare_horizons("VUSA.L", horizons=[7, 30, 90])
     
     # Demo 3: Try different stocks
     # forecast_and_plot("MSFT", horizon_days=60, n_paths=30000)
