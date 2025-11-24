@@ -61,18 +61,20 @@ class AssetFetcher(ABC):
     async def fetch_price(
         self,
         symbol: str,
-        asset_type: Optional[AssetType] = None
+        asset_type: Optional[AssetType] = None,
+        currency: str = "USD"
     ) -> Price:
         """
         Fetch the current price for a given symbol.
-        
+
         Args:
             symbol: Asset symbol (e.g., "AAPL", "BTC", "GC")
             asset_type: Type of asset (auto-detect if None)
-            
+            currency: Currency for the price (e.g., "USD", "EUR", "GBP")
+
         Returns:
             Price object with current price data
-            
+
         Raises:
             SymbolNotFoundError: If symbol is not found
             RateLimitError: If rate limit is exceeded
@@ -87,21 +89,23 @@ class AssetFetcher(ABC):
         start: datetime,
         end: datetime,
         interval: str = "1d",
-        asset_type: Optional[AssetType] = None
+        asset_type: Optional[AssetType] = None,
+        currency: str = "USD"
     ) -> HistoricalPrice:
         """
         Fetch historical prices for a given symbol.
-        
+
         Args:
             symbol: Asset symbol
             start: Start date for historical data
             end: End date for historical data
             interval: Time interval (e.g., "1d", "1h", "5m")
             asset_type: Type of asset (auto-detect if None)
-            
+            currency: Currency for the price (e.g., "USD", "EUR", "GBP")
+
         Returns:
             HistoricalPrice object with price series
-            
+
         Raises:
             SymbolNotFoundError: If symbol is not found
             RateLimitError: If rate limit is exceeded

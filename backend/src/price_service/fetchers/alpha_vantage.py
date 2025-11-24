@@ -123,15 +123,17 @@ class AlphaVantageFetcher(BaseFetcherWithCache):
     async def fetch_price(
         self,
         symbol: str,
-        asset_type: Optional[AssetType] = None
+        asset_type: Optional[AssetType] = None,
+        currency: str = "USD"
     ) -> Price:
         """
         Fetch current price for a symbol.
-        
+
         Args:
             symbol: Stock symbol (e.g., "AAPL", "MSFT")
             asset_type: Asset type (defaults to STOCK)
-            
+            currency: Currency for the price (Note: Alpha Vantage primarily returns USD)
+
         Returns:
             Price object with current data
         """
@@ -237,18 +239,20 @@ class AlphaVantageFetcher(BaseFetcherWithCache):
         start: datetime,
         end: datetime,
         interval: str = "1d",
-        asset_type: Optional[AssetType] = None
+        asset_type: Optional[AssetType] = None,
+        currency: str = "USD"
     ) -> HistoricalPrice:
         """
         Fetch historical prices for a symbol.
-        
+
         Args:
             symbol: Stock symbol
             start: Start date
             end: End date
             interval: Time interval ("1d" for daily, "1h" for hourly, etc.)
             asset_type: Asset type (defaults to STOCK)
-            
+            currency: Currency for the price (Note: Alpha Vantage primarily returns USD)
+
         Returns:
             HistoricalPrice object with time series
         """
@@ -266,13 +270,15 @@ class AlphaVantageFetcher(BaseFetcherWithCache):
         # Determine function based on interval
         if interval == "1d":
             function = "TIME_SERIES_DAILY"
-            outputsize = "full"  # Get all available data
+            # Use "compact" for free tier (returns last 100 data points)
+            # Premium users can change this to "full" for all historical data
+            outputsize = "compact"
         elif interval in ["1h", "60m"]:
             function = "TIME_SERIES_INTRADAY"
-            outputsize = "full"
+            outputsize = "compact"
         else:
             function = "TIME_SERIES_INTRADAY"
-            outputsize = "full"
+            outputsize = "compact"
         
         params = {
             "function": function,
