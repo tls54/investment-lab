@@ -7,9 +7,15 @@ readme = "README.md"
 packages = [{include = "src"}]
 
 [tool.poetry.dependencies]
-python = "^3.13"
+python = "^3.11"
 httpx = "^0.25.0"
 pydantic = "^2.5.0"
+pydantic-settings = "^2.1.0"
+fastapi = "^0.109.0"
+uvicorn = {extras = ["standard"], version = "^0.27.0"}
+yfinance = "^0.2.36"
+numpy = "^1.26.0"
+torch = "^2.1.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"
@@ -37,7 +43,7 @@ markers = [
 ]
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -48,7 +54,7 @@ ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py311"
 select = ["E", "W", "F", "I", "B", "C4", "UP"]
 ignore = ["E501", "B008", "C901"]
 
