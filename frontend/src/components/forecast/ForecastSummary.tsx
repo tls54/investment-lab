@@ -5,9 +5,10 @@ import type { ForecastResponse } from '../../api/types';
 
 interface ForecastSummaryProps {
   data: ForecastResponse;
+  currency?: string;
 }
 
-export function ForecastSummary({ data }: ForecastSummaryProps) {
+export function ForecastSummary({ data, currency = 'USD' }: ForecastSummaryProps) {
   const expectedReturn = data.expected_return * 100;
   const isPositive = expectedReturn >= 0;
 
@@ -26,14 +27,14 @@ export function ForecastSummary({ data }: ForecastSummaryProps) {
             <div>
               <span className="text-sm text-text-muted block mb-1">Current Price</span>
               <div className="text-2xl font-bold text-text-primary font-mono">
-                {formatPrice(data.current_price, 'USD')}
+                {formatPrice(data.current_price, currency)}
               </div>
             </div>
             <div className="text-text-muted text-2xl">→</div>
             <div>
               <span className="text-sm text-text-muted block mb-1">Expected Price</span>
               <div className="text-2xl font-bold text-accent-blue font-mono">
-                {formatPrice(data.mean, 'USD')}
+                {formatPrice(data.mean, currency)}
               </div>
             </div>
           </div>

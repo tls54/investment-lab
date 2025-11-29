@@ -9,6 +9,7 @@ import {
 } from '../components/forecast';
 import { ErrorMessage } from '../components/common';
 import { useForecastMutation } from '../api/hooks';
+import { getCurrencyFromSymbol } from '../utils/formatters';
 import type { ForecastRequest } from '../api/types';
 
 export default function ForecastPage() {
@@ -16,6 +17,11 @@ export default function ForecastPage() {
   const initialSymbol = searchParams.get('symbol') || '';
 
   const forecastMutation = useForecastMutation();
+
+  // Extract currency from the symbol
+  const currency = forecastMutation.data?.symbol
+    ? getCurrencyFromSymbol(forecastMutation.data.symbol)
+    : 'USD';
 
   const handleSubmit = (config: ForecastRequest) => {
     forecastMutation.mutate(config);
@@ -50,11 +56,11 @@ export default function ForecastPage() {
       {/* Results */}
       {forecastMutation.isSuccess && forecastMutation.data && (
         <div className="space-y-6">
-          <ForecastSummary data={forecastMutation.data} />
-          <ConfidenceIntervals data={forecastMutation.data} />
+          <ForecastSummary data={forecastMutation.data} currency={currency} />
+          <ConfidenceIntervals data={forecastMutation.data} currency={currency} />
           <div className="grid lg:grid-cols-2 gap-6">
-            <DistributionChart data={forecastMutation.data} />
-            <RiskMetrics data={forecastMutation.data} />
+            <DistributionChart data={forecastMutation.data} currency={currency} />
+            <RiskMetrics data={forecastMutation.data} currency={currency} />
           </div>
         </div>
       )}

@@ -39,7 +39,7 @@ class ForecastRequest(BaseModel):
     calibration_days: int = Field(252, ge=30, le=2000, description="Days of historical data for calibration")
     asset_type: Optional[AssetType] = Field(None, description="Asset type (auto-detect if None)")
     include_paths: bool = Field(False, description="Include sample paths for visualization")
-    n_sample_paths: int = Field(100, ge=10, le=500, description="Number of sample paths if include_paths=True")
+    n_sample_paths: int = Field(500, ge=10, le=1000, description="Number of sample paths if include_paths=True")
 
 
 class ForecastResponse(BaseModel):

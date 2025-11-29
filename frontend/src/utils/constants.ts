@@ -42,7 +42,7 @@ export const DEFAULT_FORECAST_CONFIG = {
   n_paths: 10000,
   calibration_days: 252,
   include_paths: true,
-  n_sample_paths: 100,
+  n_sample_paths: 500,
 } as const;
 
 export const REFRESH_INTERVALS = {
