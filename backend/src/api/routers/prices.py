@@ -231,7 +231,9 @@ async def get_historical_prices(
                     "open": p.open,
                     "high": p.high_24h,
                     "low": p.low_24h,
-                    "close": p.close
+                    "close": p.close,
+                    "currency": p.currency,
+                    "source": p.source
                 }
                 for p in historical.prices
             ]
@@ -301,17 +303,30 @@ async def convert_price(
             denomination_currency=denomination_currency
         )
         return result
-        
+
     except SymbolNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    
+
     except RateLimitError as e:
         raise HTTPException(
             status_code=429,
             detail=f"Rate limit exceeded. Retry after {e.retry_after} seconds"
         )
-    
+
+    except ValueError as e:
+        # Currency mismatch or validation error - log it
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Conversion validation error for {asset}/{denomination}: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
     except Exception as e:
+        # Log the full traceback for debugging
+        import traceback
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Conversion error for {asset}/{denomination}: {str(e)}")
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Conversion error: {str(e)}")
 
 
@@ -440,12 +455,25 @@ async def convert_historical_prices(
         
     except SymbolNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    
+
     except RateLimitError as e:
         raise HTTPException(
             status_code=429,
             detail=f"Rate limit exceeded. Retry after {e.retry_after} seconds"
         )
-    
+
+    except ValueError as e:
+        # Currency mismatch or validation error
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Historical conversion validation error for {asset}/{denomination}: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
     except Exception as e:
+        # Log the full traceback for debugging
+        import traceback
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Historical conversion error for {asset}/{denomination}: {str(e)}")
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Conversion error: {str(e)}")

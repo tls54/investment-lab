@@ -390,9 +390,9 @@ class YFinanceFetcher(AssetFetcher):
             if hist.empty:
                 raise SymbolNotFoundError(original_symbol, self.name)
 
-            # Determine asset type
+            # Determine asset type and get actual currency from yfinance
+            info = ticker.info
             if asset_type is None:
-                info = ticker.info
                 quote_type = info.get('quoteType', 'EQUITY')
                 if quote_type == 'CRYPTOCURRENCY':
                     asset_type = AssetType.CRYPTO
@@ -400,6 +400,9 @@ class YFinanceFetcher(AssetFetcher):
                     asset_type = AssetType.ETF
                 else:
                     asset_type = AssetType.STOCK
+
+            # Get actual currency from yfinance (not the parameter!)
+            actual_currency = info.get('currency', currency)
 
             # Convert to Price objects
             prices = []
@@ -414,7 +417,7 @@ class YFinanceFetcher(AssetFetcher):
                     high_24h=float(row['High']) if 'High' in row else None,
                     low_24h=float(row['Low']) if 'Low' in row else None,
                     close=float(row['Close']),
-                    currency=currency,
+                    currency=actual_currency,  # Use actual currency from yfinance
                     source=self.name
                 )
                 prices.append(price_obj)

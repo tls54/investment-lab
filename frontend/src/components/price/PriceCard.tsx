@@ -10,6 +10,7 @@ interface PriceCardProps {
   onRetry?: () => void;
   denominationSymbol?: string;
   ratio?: number;
+  denominationCurrency?: string;
   lastUpdated?: Date;
 }
 
@@ -20,6 +21,7 @@ export function PriceCard({
   onRetry,
   denominationSymbol,
   ratio,
+  denominationCurrency,
   lastUpdated,
 }: PriceCardProps) {
   if (loading && !price) {
@@ -70,8 +72,8 @@ export function PriceCard({
 
           <div className="flex items-baseline gap-4 mb-4">
             <span className="text-4xl font-bold text-text-primary font-mono">
-              {ratio !== undefined
-                ? formatPrice(ratio, denominationSymbol?.includes('BTC') ? 'BTC' : 'USD')
+              {ratio !== undefined && denominationCurrency
+                ? formatPrice(ratio, denominationCurrency)
                 : formatPrice(displayPrice, price.currency)}
             </span>
             {hasChange && (
@@ -92,7 +94,7 @@ export function PriceCard({
             )}
           </div>
 
-          {denominationSymbol && denominationSymbol !== 'USD' && (
+          {denominationSymbol && denominationSymbol !== 'USD' && ratio !== undefined && (
             <p className="text-sm text-text-muted">
               Priced in {denominationSymbol}
             </p>

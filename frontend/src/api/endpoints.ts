@@ -39,10 +39,17 @@ export const getHistoricalPrices = async (
 
 export const getCurrentConversion = async (
   asset: string,
-  denomination: string
+  denomination: string,
+  assetCurrency?: string,
+  denominationCurrency?: string
 ): Promise<ConversionResult> => {
+  const params: Record<string, string> = {};
+  if (assetCurrency) params.asset_currency = assetCurrency;
+  if (denominationCurrency) params.denomination_currency = denominationCurrency;
+
   const response = await apiClient.get<ConversionResult>(
-    `/api/convert/${asset}/${denomination}`
+    `/api/convert/${asset}/${denomination}`,
+    { params }
   );
   return response.data;
 };
@@ -50,8 +57,14 @@ export const getCurrentConversion = async (
 export const getHistoricalConversion = async (
   asset: string,
   denomination: string,
-  params: HistoricalQueryParams
+  queryParams: HistoricalQueryParams,
+  assetCurrency?: string,
+  denominationCurrency?: string
 ): Promise<HistoricalConversion> => {
+  const params: Record<string, any> = { ...queryParams };
+  if (assetCurrency) params.asset_currency = assetCurrency;
+  if (denominationCurrency) params.denomination_currency = denominationCurrency;
+
   const response = await apiClient.get<HistoricalConversion>(
     `/api/convert/${asset}/${denomination}/history`,
     { params }
