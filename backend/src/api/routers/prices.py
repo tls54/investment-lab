@@ -69,7 +69,7 @@ async def get_price(
     symbol: str,
     asset_type: Optional[AssetType] = Query(None, description="Type of asset (stock, crypto, etc.)"),
     source: Optional[str] = Query(None, description="Data source (alpha_vantage, yfinance)"),
-    currency: str = Query("USD", description="Currency for crypto prices (e.g., USD, EUR, GBP)")
+    currency: Optional[str] = Query(None, description="Currency for crypto prices (e.g., USD, EUR, GBP). If not specified, returns asset in its native currency.")
 ):
     """
     Get the current price for a symbol.
@@ -155,7 +155,7 @@ async def get_historical_prices(
     interval: str = Query("1d", description="Time interval (1d, 1h, 5m)"),
     asset_type: Optional[AssetType] = Query(None, description="Type of asset"),
     source: Optional[str] = Query(None, description="Data source"),
-    currency: str = Query("USD", description="Currency for crypto prices (e.g., USD, EUR, GBP)")
+    currency: Optional[str] = Query(None, description="Currency for crypto prices (e.g., USD, EUR, GBP). If not specified, returns asset in its native currency.")
 ):
     """
     Get historical prices for a symbol.

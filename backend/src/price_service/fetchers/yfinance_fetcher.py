@@ -54,7 +54,7 @@ class YFinanceFetcher(AssetFetcher):
         self,
         symbol: str,
         asset_type: Optional[AssetType] = None,
-        currency: str = "USD"
+        currency: Optional[str] = "USD"
     ) -> str:
         """
         Normalize crypto symbols for yfinance.
@@ -71,6 +71,8 @@ class YFinanceFetcher(AssetFetcher):
             Normalized symbol for yfinance (e.g., "BTC-USD", "BTC-EUR")
         """
         symbol = symbol.upper().strip()
+        if currency is None:
+            currency = "USD"
         currency = currency.upper().strip()
 
         # If already has a currency suffix, return as-is
@@ -87,7 +89,7 @@ class YFinanceFetcher(AssetFetcher):
         self,
         symbol: str,
         asset_type: Optional[AssetType] = None,
-        currency: str = "USD"
+        currency: Optional[str] = None
     ) -> Price:
         """
         Fetch current price for a stock/ETF/crypto.
@@ -98,14 +100,19 @@ class YFinanceFetcher(AssetFetcher):
         Args:
             symbol: Stock/crypto symbol (e.g., "AAPL", "BTC")
             asset_type: STOCK, ETF, or CRYPTO
-            currency: Fiat currency for crypto prices (e.g., "USD", "EUR", "GBP")
+            currency: Fiat currency for crypto prices (e.g., "USD", "EUR", "GBP").
+                     If None, returns asset in its native currency (USD for US stocks, GBP for .L stocks, etc.)
 
         Returns:
             Price object with current data
         """
+        # Default to USD for crypto if not specified, None for stocks (use native currency)
+        if currency is None:
+            currency = "USD"
+
         try:
             # Try direct pair first (most accurate)
-            return await self._fetch_price_direct(symbol, asset_type, currency)
+            return await self._fetch_price_direct(symbol, asset_type, currency, currency_explicitly_requested=(currency != "USD"))
 
         except SymbolNotFoundError:
             # If direct pair fails, try triangular conversion
@@ -122,7 +129,7 @@ class YFinanceFetcher(AssetFetcher):
     def _should_try_triangular(
         self,
         asset_type: Optional[AssetType],
-        currency: str
+        currency: Optional[str]
     ) -> bool:
         """
         Determine if triangular conversion should be attempted AT THE FETCHER LEVEL.
@@ -147,8 +154,8 @@ class YFinanceFetcher(AssetFetcher):
         if asset_type != AssetType.CRYPTO:
             return False
 
-        # Don't try if already USD (would create loop)
-        if currency.upper().strip() == "USD":
+        # Don't try if already USD (would create loop) or if currency is None (defaults to USD)
+        if currency is None or currency.upper().strip() == "USD":
             return False
 
         return True
@@ -157,7 +164,8 @@ class YFinanceFetcher(AssetFetcher):
         self,
         symbol: str,
         asset_type: Optional[AssetType] = None,
-        currency: str = "USD"
+        currency: str = "USD",
+        currency_explicitly_requested: bool = False
     ) -> Price:
         """
         Fetch price directly from yfinance (without triangular conversion).
@@ -168,6 +176,7 @@ class YFinanceFetcher(AssetFetcher):
             symbol: Stock/crypto symbol
             asset_type: STOCK, ETF, or CRYPTO
             currency: Fiat currency for crypto prices
+            currency_explicitly_requested: True if user explicitly requested this currency
 
         Returns:
             Price object with current data
@@ -206,9 +215,11 @@ class YFinanceFetcher(AssetFetcher):
             # Get the actual currency returned by yfinance
             actual_currency = info.get('currency', 'USD')
 
-            # Validate currency for non-crypto assets
+            # Validate currency for non-crypto assets ONLY if user explicitly requested a specific currency
             # Stocks/ETFs should only be fetched in their native exchange currency
-            if asset_type in (AssetType.STOCK, AssetType.ETF) and currency.upper() != actual_currency.upper():
+            if (asset_type in (AssetType.STOCK, AssetType.ETF) and
+                currency_explicitly_requested and
+                currency.upper() != actual_currency.upper()):
                 raise SymbolNotFoundError(
                     f"{original_symbol} in {currency.upper()} (not available at fetcher level - "
                     f"{original_symbol} is traded in {actual_currency}. "
@@ -369,7 +380,7 @@ class YFinanceFetcher(AssetFetcher):
         end: datetime,
         interval: str = "1d",
         asset_type: Optional[AssetType] = None,
-        currency: str = "USD"
+        currency: Optional[str] = None
     ) -> HistoricalPrice:
         """
         Fetch historical prices for a stock/ETF/crypto.
@@ -380,12 +391,17 @@ class YFinanceFetcher(AssetFetcher):
             end: End date
             interval: Time interval ("1d", "1h", "5m", etc.)
             asset_type: STOCK, ETF, or CRYPTO
-            currency: Fiat currency for crypto prices (e.g., "USD", "EUR", "GBP")
+            currency: Fiat currency for crypto prices (e.g., "USD", "EUR", "GBP").
+                     If None, returns asset in its native currency.
 
         Returns:
             HistoricalPrice object with time series
         """
         original_symbol = symbol.upper().strip()
+
+        # Default to USD for crypto if not specified
+        if currency is None:
+            currency = "USD"
 
         # Normalize crypto symbols (add currency suffix if needed)
         normalized_symbol = self._normalize_crypto_symbol(original_symbol, asset_type, currency)
