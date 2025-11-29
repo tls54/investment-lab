@@ -1,10 +1,23 @@
+// Denomination categories
+export const CURRENCY_DENOMINATIONS = [
+  { label: 'US Dollar', value: 'USD', symbol: '$', description: 'Convert to USD' },
+  { label: 'British Pound', value: 'GBP', symbol: '£', description: 'Convert to GBP' },
+  { label: 'Euro', value: 'EUR', symbol: '€', description: 'Convert to EUR' },
+  { label: 'Japanese Yen', value: 'JPY', symbol: '¥', description: 'Convert to JPY' },
+] as const;
+
+export const ASSET_DENOMINATIONS = [
+  { label: 'Bitcoin', value: 'BTC', symbol: '₿', description: 'Price in Bitcoin', isCrypto: true },
+  { label: 'Ethereum', value: 'ETH', symbol: 'Ξ', description: 'Price in Ethereum', isCrypto: true },
+  { label: 'Gold ETF', value: 'GLD', symbol: 'Au', description: 'Price in Gold', isCrypto: false },
+  { label: 'S&P 500', value: 'SPY', symbol: 'SPY', description: 'Price in S&P 500 ETF', isCrypto: false },
+] as const;
+
+// Combined for backward compatibility
 export const DENOMINATIONS = [
-  { label: 'Native Currency', value: 'NATIVE', symbol: '' },
-  { label: 'US Dollar', value: 'USD', symbol: '$' },
-  { label: 'Bitcoin', value: 'BTC-USD', symbol: '₿' },
-  { label: 'Ethereum', value: 'ETH-USD', symbol: 'Ξ' },
-  { label: 'Gold ETF', value: 'GLD', symbol: 'Au' },
-  { label: 'British Pound', value: 'GBP', symbol: '£' },
+  { label: 'Native Currency', value: 'NATIVE', symbol: '', description: 'Show in native currency' },
+  ...CURRENCY_DENOMINATIONS,
+  ...ASSET_DENOMINATIONS,
 ] as const;
 
 export const TIME_RANGES = [
@@ -45,3 +58,16 @@ export const POPULAR_SYMBOLS = [
   { symbol: 'BTC-USD', name: 'Bitcoin' },
   { symbol: 'ETH-USD', name: 'Ethereum' },
 ] as const;
+
+// List of currency-agnostic crypto symbols
+export const CRYPTO_SYMBOLS = ['BTC', 'ETH'] as const;
+
+// Helper to check if a denomination is a crypto symbol (without currency suffix)
+export function isCryptoDenomination(denomination: string): boolean {
+  return CRYPTO_SYMBOLS.includes(denomination as any);
+}
+
+// Helper to construct full crypto symbol with asset currency
+export function constructCryptoSymbol(cryptoBase: string, assetCurrency: string): string {
+  return `${cryptoBase}-${assetCurrency}`;
+}

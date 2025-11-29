@@ -17,7 +17,7 @@ from ...core.config import settings
 # Import our fetchers
 from ...price_service.fetchers import AlphaVantageFetcher, YFinanceFetcher
 from ...price_service.models import AssetType, SymbolNotFoundError, RateLimitError, APIError
-from ...price_service.converter import DenominationConverter
+from ...price_service.converter import DenominationConverter, is_currency_code
 
 
 # Create a router
@@ -297,12 +297,25 @@ async def convert_price(
     - Hedge calculations
     """
     try:
-        result = await converter.convert(
-            asset, denomination, asset_type, denomination_type,
-            asset_currency=asset_currency,
-            denomination_currency=denomination_currency
-        )
-        return result
+        # Check if denomination is a currency code (e.g., USD, GBP) or an asset symbol (e.g., BTC-USD)
+        if is_currency_code(denomination):
+            # Simple currency conversion: AAPL in GBP
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Currency conversion requested: {asset} → {denomination}")
+
+            result = await converter.convert_to_currency(
+                asset, denomination, asset_type
+            )
+            return result
+        else:
+            # Asset ratio conversion: AAPL / BTC-USD
+            result = await converter.convert(
+                asset, denomination, asset_type, denomination_type,
+                asset_currency=asset_currency,
+                denomination_currency=denomination_currency
+            )
+            return result
 
     except SymbolNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -443,16 +456,28 @@ async def convert_historical_prices(
             # Default: Last 7 days
             end = datetime.now()
             start = end - timedelta(days=7)
-        
-        # Fetch and convert
-        result = await converter.convert_historical(
-            asset, denomination, start, end, interval,
-            asset_type, denomination_type,
-            asset_currency=asset_currency,
-            denomination_currency=denomination_currency
-        )
-        return result
-        
+
+        # Check if denomination is a currency code or asset symbol
+        if is_currency_code(denomination):
+            # Simple currency conversion historical: AAPL in GBP over time
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Historical currency conversion requested: {asset} → {denomination}")
+
+            result = await converter.convert_to_currency_historical(
+                asset, denomination, start, end, interval, asset_type
+            )
+            return result
+        else:
+            # Asset ratio conversion historical: AAPL / BTC-USD over time
+            result = await converter.convert_historical(
+                asset, denomination, start, end, interval,
+                asset_type, denomination_type,
+                asset_currency=asset_currency,
+                denomination_currency=denomination_currency
+            )
+            return result
+
     except SymbolNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
 

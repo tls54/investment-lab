@@ -40,15 +40,36 @@ export interface HistoricalPrice {
   count: number;
 }
 
+// Currency conversion response (simple forex conversion)
+export interface CurrencyConversionResult {
+  symbol: string;
+  asset_type: string;
+  price: number;
+  currency: string;
+  native_price: number;
+  native_currency: string;
+  target_currency: string;
+  converted_price: number;
+  forex_rate: number;
+  timestamp: string;
+  conversion_method: 'direct' | 'forex';
+  interpretation: string;
+}
+
+// Asset ratio conversion response
 export interface ConversionResult {
   asset_symbol: string;
   denomination_symbol: string;
   ratio: number;
   inverse_ratio: number;
-  asset_price_usd: number;
-  denomination_price_usd: number;
+  asset_price: number;
   asset_currency: string;
+  denomination_price: number;
   denomination_currency: string;
+  asset_price_normalized: number;
+  denomination_price_normalized: number;
+  common_currency: string;
+  conversion_method: 'direct' | 'triangular';
   timestamp: string;
   interpretation: string;
   inverse_interpretation: string;
@@ -59,8 +80,13 @@ export interface HistoricalConversionPoint {
   date: string;
   ratio: number;
   inverse_ratio: number;
-  asset_price_usd: number;
-  denomination_price_usd: number;
+  asset_price: number;
+  asset_currency: string;
+  denomination_price: number;
+  denomination_currency: string;
+  asset_price_normalized: number;
+  denomination_price_normalized: number;
+  common_currency: string;
 }
 
 export interface HistoricalConversion {
@@ -70,6 +96,8 @@ export interface HistoricalConversion {
   end_date: string;
   interval: string;
   count: number;
+  conversion_method: 'direct' | 'triangular';
+  common_currency: string;
   data: HistoricalConversionPoint[];
   summary: {
     min_ratio: number;

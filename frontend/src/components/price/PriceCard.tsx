@@ -3,6 +3,22 @@ import { Card, LoadingSpinner, ErrorMessage, Button } from '../common';
 import { formatPrice, formatTimestamp } from '../../utils';
 import type { Price } from '../../api/types';
 
+interface CurrencyConversion {
+  converted_price: number;
+  target_currency: string;
+  native_price: number;
+  native_currency: string;
+  forex_rate: number;
+  conversion_method: string;
+}
+
+interface RatioConversion {
+  conversion_method: 'direct' | 'triangular';
+  common_currency?: string;
+  asset_currency: string;
+  denomination_currency: string;
+}
+
 interface PriceCardProps {
   price?: Price;
   loading?: boolean;
@@ -11,6 +27,8 @@ interface PriceCardProps {
   denominationSymbol?: string;
   ratio?: number;
   denominationCurrency?: string;
+  currencyConversion?: CurrencyConversion;
+  ratioConversion?: RatioConversion;
   lastUpdated?: Date;
 }
 
@@ -22,6 +40,8 @@ export function PriceCard({
   denominationSymbol,
   ratio,
   denominationCurrency,
+  currencyConversion,
+  ratioConversion,
   lastUpdated,
 }: PriceCardProps) {
   if (loading && !price) {
@@ -50,7 +70,19 @@ export function PriceCard({
     );
   }
 
-  const displayPrice = ratio !== undefined ? ratio : price.price;
+  // Determine what price to display
+  const displayPrice = currencyConversion
+    ? currencyConversion.converted_price
+    : ratio !== undefined
+      ? ratio
+      : price.price;
+
+  const displayCurrency = currencyConversion
+    ? currencyConversion.target_currency
+    : denominationCurrency
+      ? denominationCurrency
+      : price.currency;
+
   const hasChange = price.open && price.close;
   const change = hasChange ? ((price.close! - price.open!) / price.open!) * 100 : 0;
   const isPositive = change >= 0;
@@ -72,9 +104,7 @@ export function PriceCard({
 
           <div className="flex items-baseline gap-4 mb-4">
             <span className="text-4xl font-bold text-text-primary font-mono">
-              {ratio !== undefined && denominationCurrency
-                ? formatPrice(ratio, denominationCurrency)
-                : formatPrice(displayPrice, price.currency)}
+              {formatPrice(displayPrice, displayCurrency)}
             </span>
             {hasChange && (
               <div
@@ -94,10 +124,24 @@ export function PriceCard({
             )}
           </div>
 
-          {denominationSymbol && denominationSymbol !== 'USD' && ratio !== undefined && (
+          {currencyConversion && (
             <p className="text-sm text-text-muted">
-              Priced in {denominationSymbol}
+              Converted to {currencyConversion.target_currency}
+              {currencyConversion.conversion_method === 'forex' && (
+                <span> (1 {currencyConversion.native_currency} = {currencyConversion.forex_rate.toFixed(4)} {currencyConversion.target_currency})</span>
+              )}
             </p>
+          )}
+
+          {ratio !== undefined && denominationSymbol && !currencyConversion && (
+            <div className="text-sm text-text-muted">
+              <p>Priced in {denominationSymbol}</p>
+              {ratioConversion?.conversion_method === 'triangular' && ratioConversion.common_currency && (
+                <p className="text-xs mt-1 text-text-muted/80">
+                  Cross-currency conversion via {ratioConversion.common_currency} ({ratioConversion.asset_currency} → {ratioConversion.common_currency} → ratio with {ratioConversion.denomination_currency})
+                </p>
+              )}
+            </div>
           )}
         </div>
 

@@ -3,6 +3,8 @@ Denomination converter for pricing assets in terms of other assets.
 
 This module allows pricing any asset in terms of any other asset.
 Example: AAPL priced in BTC, SPY priced in Gold, etc.
+
+Also supports simple currency conversion (AAPL in GBP).
 """
 
 from typing import Optional, List, Tuple
@@ -14,6 +16,27 @@ from .fetchers import AlphaVantageFetcher, YFinanceFetcher
 
 
 logger = logging.getLogger(__name__)
+
+
+# Common currency codes (ISO 4217)
+CURRENCY_CODES = {
+    "USD", "EUR", "GBP", "JPY", "CHF", "CAD", "AUD", "NZD",
+    "CNY", "INR", "SGD", "HKD", "KRW", "MXN", "BRL", "ZAR"
+}
+
+
+def is_currency_code(symbol: str) -> bool:
+    """
+    Check if a symbol is a currency code rather than an asset symbol.
+
+    Args:
+        symbol: Symbol to check (e.g., "USD", "GBP", "BTC-USD")
+
+    Returns:
+        True if it's a currency code, False if it's an asset symbol
+    """
+    symbol_upper = symbol.upper().strip()
+    return symbol_upper in CURRENCY_CODES
 
 
 class DenominationConverter:
@@ -55,7 +78,108 @@ class DenominationConverter:
         """
         # yfinance now supports all asset types (stocks, ETFs, crypto)
         return self.fetchers["yfinance"]
-    
+
+    async def _fetch_forex_rate(self, from_currency: str, to_currency: str) -> float:
+        """
+        Fetch forex exchange rate between two currencies.
+
+        Args:
+            from_currency: Source currency (e.g., "GBP")
+            to_currency: Target currency (e.g., "USD")
+
+        Returns:
+            Exchange rate (e.g., 1.27 means 1 GBP = 1.27 USD)
+        """
+        fetcher = self.fetchers["yfinance"]
+        return await fetcher._fetch_forex_rate(from_currency, to_currency)
+
+    async def convert_to_currency(
+        self,
+        asset_symbol: str,
+        target_currency: str,
+        asset_type: Optional[AssetType] = None
+    ) -> dict:
+        """
+        Convert asset price to a different currency (simple currency conversion).
+
+        This is different from convert() - it doesn't calculate a ratio,
+        just converts the asset's price to a different currency.
+
+        Args:
+            asset_symbol: Symbol of asset (e.g., "AAPL", "VUSA.L")
+            target_currency: Target currency code (e.g., "USD", "GBP", "EUR")
+            asset_type: Optional type of asset
+
+        Returns:
+            Dict with converted price:
+            {
+                "symbol": "AAPL",
+                "price": 242.50,
+                "currency": "USD",
+                "native_price": 242.50,
+                "native_currency": "USD",
+                "target_currency": "GBP",
+                "converted_price": 190.94,
+                "forex_rate": 0.787,
+                "timestamp": "2025-11-29T...",
+                "conversion_method": "direct" | "forex"
+            }
+
+        Example:
+            # Convert VUSA.L (priced in GBP) to USD
+            result = await converter.convert_to_currency("VUSA.L", "USD")
+            # result["native_price"] = 98.0, native_currency = "GBP"
+            # result["converted_price"] = 124.46, target_currency = "USD"
+        """
+        fetcher = self._get_fetcher(asset_type)
+
+        logger.info(f"Converting {asset_symbol} to {target_currency}")
+
+        # Fetch the asset price in its native currency
+        asset_price = await fetcher.fetch_price(asset_symbol, asset_type)
+
+        # Check if already in target currency
+        if asset_price.currency == target_currency:
+            logger.info(f"{asset_symbol} already in {target_currency}, no conversion needed")
+            return {
+                "symbol": asset_symbol,
+                "asset_type": asset_price.asset_type.value,
+                "price": asset_price.price,
+                "currency": asset_price.currency,
+                "native_price": asset_price.price,
+                "native_currency": asset_price.currency,
+                "target_currency": target_currency,
+                "converted_price": asset_price.price,
+                "forex_rate": 1.0,
+                "timestamp": asset_price.timestamp.isoformat(),
+                "conversion_method": "direct",
+                "interpretation": f"{asset_symbol} is already priced in {target_currency}"
+            }
+
+        # Fetch forex rate and convert
+        forex_rate = await self._fetch_forex_rate(asset_price.currency, target_currency)
+        converted_price = asset_price.price * forex_rate
+
+        logger.info(
+            f"Converted {asset_symbol}: {asset_price.price} {asset_price.currency} "
+            f"× {forex_rate} = {converted_price} {target_currency}"
+        )
+
+        return {
+            "symbol": asset_symbol,
+            "asset_type": asset_price.asset_type.value,
+            "price": asset_price.price,
+            "currency": asset_price.currency,
+            "native_price": asset_price.price,
+            "native_currency": asset_price.currency,
+            "target_currency": target_currency,
+            "converted_price": converted_price,
+            "forex_rate": forex_rate,
+            "timestamp": asset_price.timestamp.isoformat(),
+            "conversion_method": "forex",
+            "interpretation": f"1 {asset_price.currency} = {forex_rate:.4f} {target_currency}"
+        }
+
     async def convert(
         self,
         asset_symbol: str,
@@ -103,38 +227,172 @@ class DenominationConverter:
         asset_price = await asset_fetcher.fetch_price(asset_symbol, asset_type, currency=asset_currency)
         denom_price = await denom_fetcher.fetch_price(denomination_symbol, denomination_type, currency=denomination_currency)
 
-        # Validate matching currencies for accurate conversion
+        # Check if currencies match
+        conversion_method = "direct"
+        asset_price_normalized = asset_price.price
+        denom_price_normalized = denom_price.price
+        common_currency = asset_price.currency
+
         if asset_price.currency != denom_price.currency:
-            raise ValueError(
-                f"Currency mismatch: {asset_symbol} is priced in {asset_price.currency} "
-                f"but {denomination_symbol} is priced in {denom_price.currency}. "
-                f"Cross-currency conversion is not yet supported. Please ensure both assets use the same currency."
+            # Cross-currency conversion via USD triangulation
+            logger.info(
+                f"Currency mismatch detected: {asset_symbol} is in {asset_price.currency}, "
+                f"{denomination_symbol} is in {denom_price.currency}. "
+                f"Using triangular conversion via USD."
             )
-        
-        # Calculate ratio
-        # How many denomination units equals one asset unit?
-        ratio = asset_price.price / denom_price.price
-        inverse_ratio = denom_price.price / asset_price.price
-        
+            conversion_method = "triangular"
+            common_currency = "USD"
+
+            # Convert asset to USD if needed
+            if asset_price.currency != "USD":
+                forex_rate = await self._fetch_forex_rate(asset_price.currency, "USD")
+                asset_price_normalized = asset_price.price * forex_rate
+                logger.info(
+                    f"Converting {asset_symbol}: {asset_price.price} {asset_price.currency} "
+                    f"× {forex_rate} = {asset_price_normalized} USD"
+                )
+            else:
+                asset_price_normalized = asset_price.price
+
+            # Convert denomination to USD if needed
+            if denom_price.currency != "USD":
+                forex_rate = await self._fetch_forex_rate(denom_price.currency, "USD")
+                denom_price_normalized = denom_price.price * forex_rate
+                logger.info(
+                    f"Converting {denomination_symbol}: {denom_price.price} {denom_price.currency} "
+                    f"× {forex_rate} = {denom_price_normalized} USD"
+                )
+            else:
+                denom_price_normalized = denom_price.price
+
+        # Calculate ratio using normalized prices
+        ratio = asset_price_normalized / denom_price_normalized
+        inverse_ratio = denom_price_normalized / asset_price_normalized
+
         logger.info(
             f"1 {asset_symbol} = {ratio:.6f} {denomination_symbol} "
-            f"({asset_price.price} / {denom_price.price})"
+            f"({asset_price_normalized} / {denom_price_normalized}) "
+            f"[method: {conversion_method}]"
         )
-        
+
         return {
             "asset_symbol": asset_symbol,
             "denomination_symbol": denomination_symbol,
             "ratio": ratio,
-            "asset_price_usd": asset_price.price,
-            "denomination_price_usd": denom_price.price,
+            "asset_price": asset_price.price,
             "asset_currency": asset_price.currency,
+            "denomination_price": denom_price.price,
             "denomination_currency": denom_price.currency,
+            "asset_price_normalized": asset_price_normalized,
+            "denomination_price_normalized": denom_price_normalized,
+            "common_currency": common_currency,
+            "conversion_method": conversion_method,
             "timestamp": asset_price.timestamp.isoformat(),
             "inverse_ratio": inverse_ratio,
             "interpretation": f"1 {asset_symbol} = {ratio:.6f} {denomination_symbol}",
             "inverse_interpretation": f"1 {denomination_symbol} = {inverse_ratio:.2f} {asset_symbol}"
         }
-    
+
+    async def convert_to_currency_historical(
+        self,
+        asset_symbol: str,
+        target_currency: str,
+        start: datetime,
+        end: datetime,
+        interval: str = "1d",
+        asset_type: Optional[AssetType] = None
+    ) -> dict:
+        """
+        Convert historical asset prices to a different currency.
+
+        Note: Uses current forex rate for all historical points for simplicity.
+        For accurate historical conversions, historical forex rates would be needed.
+
+        Args:
+            asset_symbol: Symbol of asset
+            target_currency: Target currency code
+            start: Start date
+            end: End date
+            interval: Time interval
+            asset_type: Optional asset type
+
+        Returns:
+            Dict with converted historical prices
+        """
+        fetcher = self._get_fetcher(asset_type)
+
+        logger.info(
+            f"Converting historical {asset_symbol} to {target_currency} "
+            f"from {start.date()} to {end.date()}"
+        )
+
+        # Fetch historical data in native currency
+        asset_history = await fetcher.fetch_historical(
+            asset_symbol, start, end, interval, asset_type
+        )
+
+        if not asset_history.prices:
+            return {
+                "symbol": asset_symbol,
+                "target_currency": target_currency,
+                "start_date": start.isoformat(),
+                "end_date": end.isoformat(),
+                "interval": interval,
+                "count": 0,
+                "conversion_method": "none",
+                "data": []
+            }
+
+        native_currency = asset_history.prices[0].currency
+        conversion_method = "direct"
+        forex_rate = 1.0
+
+        # Check if conversion needed
+        if native_currency != target_currency:
+            conversion_method = "forex"
+            forex_rate = await self._fetch_forex_rate(native_currency, target_currency)
+            logger.info(f"Using forex rate {native_currency}/{target_currency}: {forex_rate}")
+
+        # Convert all price points
+        data_points = []
+        for price_obj in asset_history.prices:
+            converted_price = price_obj.price * forex_rate
+
+            data_points.append({
+                "timestamp": price_obj.timestamp.isoformat(),
+                "date": price_obj.timestamp.date().isoformat(),
+                "native_price": price_obj.price,
+                "native_currency": native_currency,
+                "converted_price": converted_price,
+                "target_currency": target_currency,
+                "forex_rate": forex_rate,
+                "volume": price_obj.volume,
+                "open": price_obj.open * forex_rate if price_obj.open else None,
+                "high": price_obj.high_24h * forex_rate if price_obj.high_24h else None,
+                "low": price_obj.low_24h * forex_rate if price_obj.low_24h else None,
+                "close": price_obj.close * forex_rate if price_obj.close else None
+            })
+
+        logger.info(f"Converted {len(data_points)} historical price points")
+
+        return {
+            "symbol": asset_symbol,
+            "native_currency": native_currency,
+            "target_currency": target_currency,
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+            "interval": interval,
+            "count": len(data_points),
+            "conversion_method": conversion_method,
+            "forex_rate": forex_rate,
+            "data": data_points,
+            "summary": {
+                "min_price": min(d["converted_price"] for d in data_points) if data_points else None,
+                "max_price": max(d["converted_price"] for d in data_points) if data_points else None,
+                "avg_price": sum(d["converted_price"] for d in data_points) / len(data_points) if data_points else None
+            }
+        }
+
     async def convert_historical(
         self,
         asset_symbol: str,
@@ -209,45 +467,84 @@ class DenominationConverter:
             denomination_symbol, start, end, interval, denomination_type, currency=denomination_currency
         )
 
-        # Validate matching currencies for accurate conversion
+        # Check if currencies match
+        conversion_method = "direct"
+        common_currency = None
+        forex_rates = {}  # Cache for forex rates by date
+
         if asset_history.prices and denom_history.prices:
             asset_curr = asset_history.prices[0].currency
             denom_curr = denom_history.prices[0].currency
+            common_currency = asset_curr
+
             if asset_curr != denom_curr:
-                raise ValueError(
-                    f"Currency mismatch: {asset_symbol} is priced in {asset_curr} "
-                    f"but {denomination_symbol} is priced in {denom_curr}. "
-                    f"Cross-currency conversion is not yet supported. Please ensure both assets use the same currency."
+                # Cross-currency conversion via USD
+                logger.info(
+                    f"Currency mismatch detected in historical data: {asset_symbol} is in {asset_curr}, "
+                    f"{denomination_symbol} is in {denom_curr}. Using triangular conversion via USD."
                 )
-        
+                conversion_method = "triangular"
+                common_currency = "USD"
+
+                # Fetch current forex rates (we'll use current rates for all historical points)
+                # Note: For more accuracy, we'd need historical forex rates, but that's complex
+                if asset_curr != "USD":
+                    forex_rates[asset_curr] = await self._fetch_forex_rate(asset_curr, "USD")
+                    logger.info(f"Forex rate {asset_curr}/USD: {forex_rates[asset_curr]}")
+
+                if denom_curr != "USD":
+                    forex_rates[denom_curr] = await self._fetch_forex_rate(denom_curr, "USD")
+                    logger.info(f"Forex rate {denom_curr}/USD: {forex_rates[denom_curr]}")
+
         # Match up timestamps and calculate ratios
         # We'll use the asset timestamps as the reference
         data_points = []
-        
+
         # Create a dict for quick denomination price lookup
         denom_prices = {
-            p.timestamp.date(): p.price 
+            p.timestamp.date(): p.price
             for p in denom_history.prices
         }
-        
+
         for asset_price_obj in asset_history.prices:
             date = asset_price_obj.timestamp.date()
-            
+
             # Find matching denomination price
             if date in denom_prices:
                 denom_price = denom_prices[date]
-                ratio = asset_price_obj.price / denom_price
-                
+
+                # Normalize prices if cross-currency
+                if conversion_method == "triangular":
+                    asset_price_normalized = asset_price_obj.price
+                    denom_price_normalized = denom_price
+
+                    if asset_price_obj.currency != "USD":
+                        asset_price_normalized = asset_price_obj.price * forex_rates[asset_price_obj.currency]
+
+                    if denom_history.prices[0].currency != "USD":
+                        denom_price_normalized = denom_price * forex_rates[denom_history.prices[0].currency]
+                else:
+                    # Direct conversion (same currency)
+                    asset_price_normalized = asset_price_obj.price
+                    denom_price_normalized = denom_price
+
+                ratio = asset_price_normalized / denom_price_normalized
+
                 data_points.append({
                     "timestamp": asset_price_obj.timestamp.isoformat(),
                     "date": date.isoformat(),
                     "ratio": ratio,
-                    "asset_price_usd": asset_price_obj.price,
-                    "denomination_price_usd": denom_price,
-                    "inverse_ratio": denom_price / asset_price_obj.price
+                    "asset_price": asset_price_obj.price,
+                    "asset_currency": asset_price_obj.currency,
+                    "denomination_price": denom_price,
+                    "denomination_currency": denom_history.prices[0].currency,
+                    "asset_price_normalized": asset_price_normalized,
+                    "denomination_price_normalized": denom_price_normalized,
+                    "common_currency": common_currency,
+                    "inverse_ratio": denom_price_normalized / asset_price_normalized
                 })
-        
-        logger.info(f"Generated {len(data_points)} conversion data points")
+
+        logger.info(f"Generated {len(data_points)} conversion data points [method: {conversion_method}]")
         
         return {
             "asset_symbol": asset_symbol,
@@ -256,6 +553,8 @@ class DenominationConverter:
             "end_date": end.isoformat(),
             "interval": interval,
             "count": len(data_points),
+            "conversion_method": conversion_method,
+            "common_currency": common_currency,
             "data": data_points,
             "summary": {
                 "min_ratio": min(d["ratio"] for d in data_points) if data_points else None,
