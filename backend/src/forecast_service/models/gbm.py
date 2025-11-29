@@ -304,7 +304,7 @@ class GBMModel:
         params: GBMParams,
         horizon_days: int,
         n_paths: int = 10000,
-        n_sample_paths: int = 100
+        n_sample_paths: int = 500
     ) -> Dict:
         """
         Generate forecast with sample paths for visualization.

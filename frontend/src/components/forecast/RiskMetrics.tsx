@@ -5,14 +5,15 @@ import type { ForecastResponse } from '../../api/types';
 
 interface RiskMetricsProps {
   data: ForecastResponse;
+  currency?: string;
 }
 
-export function RiskMetrics({ data }: RiskMetricsProps) {
+export function RiskMetrics({ data, currency = 'USD' }: RiskMetricsProps) {
   const metrics = [
     {
       icon: AlertTriangle,
       label: 'Value at Risk (95%)',
-      value: formatPrice(data.var_95, 'USD'),
+      value: formatPrice(data.var_95, currency),
       description: '5% chance of losing more than this amount',
       iconColor: 'text-red-400',
       bgColor: 'bg-red-500/10',
@@ -21,7 +22,7 @@ export function RiskMetrics({ data }: RiskMetricsProps) {
     {
       icon: DollarSign,
       label: 'Conditional VaR (95%)',
-      value: formatPrice(data.cvar_95, 'USD'),
+      value: formatPrice(data.cvar_95, currency),
       description: 'Average loss in the worst 5% of scenarios',
       iconColor: 'text-orange-400',
       bgColor: 'bg-orange-500/10',

@@ -18,6 +18,57 @@ export function ForecastForm({ onSubmit, loading, initialSymbol = '' }: Forecast
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [calibrationDays, setCalibrationDays] = useState<number>(DEFAULT_FORECAST_CONFIG.calibration_days);
   const [includePaths, setIncludePaths] = useState<boolean>(DEFAULT_FORECAST_CONFIG.include_paths);
+  const [isCustomPaths, setIsCustomPaths] = useState(false);
+  const [customPathValue, setCustomPathValue] = useState<string>('');
+  const [isCustomHorizon, setIsCustomHorizon] = useState(false);
+  const [customHorizonValue, setCustomHorizonValue] = useState<string>('');
+
+  const handlePresetPathClick = (value: number) => {
+    setNPaths(value);
+    setIsCustomPaths(false);
+    setCustomPathValue('');
+  };
+
+  const handleCustomPathClick = () => {
+    setIsCustomPaths(true);
+    if (customPathValue) {
+      const parsed = parseInt(customPathValue, 10);
+      if (!isNaN(parsed) && parsed >= 100 && parsed <= 10000000) {
+        setNPaths(parsed);
+      }
+    }
+  };
+
+  const handleCustomPathChange = (value: string) => {
+    setCustomPathValue(value);
+    const parsed = parseInt(value, 10);
+    if (!isNaN(parsed) && parsed >= 100 && parsed <= 10000000) {
+      setNPaths(parsed);
+    }
+  };
+
+  const handleSliderChange = (value: number) => {
+    setHorizonDays(value);
+    setIsCustomHorizon(false);
+    setCustomHorizonValue('');
+  };
+
+  const handleCustomHorizonToggle = () => {
+    setIsCustomHorizon(!isCustomHorizon);
+    if (!isCustomHorizon && horizonDays > 90) {
+      setCustomHorizonValue(horizonDays.toString());
+    } else if (!isCustomHorizon) {
+      setCustomHorizonValue('');
+    }
+  };
+
+  const handleCustomHorizonChange = (value: string) => {
+    setCustomHorizonValue(value);
+    const parsed = parseInt(value, 10);
+    if (!isNaN(parsed) && parsed >= 1 && parsed <= 3650) {
+      setHorizonDays(parsed);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,31 +103,60 @@ export function ForecastForm({ onSubmit, loading, initialSymbol = '' }: Forecast
             <label className="block text-sm font-medium text-text-secondary">
               Forecast Horizon
             </label>
-            <span className="text-lg font-bold text-accent-purple font-mono">
-              {horizonDays} days
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-lg font-bold text-accent-purple font-mono">
+                {horizonDays} days
+              </span>
+              <button
+                type="button"
+                onClick={handleCustomHorizonToggle}
+                className={`px-3 py-1 rounded text-xs font-medium transition-all duration-200 ${
+                  isCustomHorizon
+                    ? 'bg-accent-purple text-white'
+                    : 'bg-dark-600 text-text-secondary hover:text-text-primary hover:bg-dark-500 border border-dark-500'
+                }`}
+              >
+                Custom
+              </button>
+            </div>
           </div>
-          <input
-            type="range"
-            min="1"
-            max="90"
-            value={horizonDays}
-            onChange={(e) => setHorizonDays(Number(e.target.value))}
-            className="w-full h-2 bg-dark-600 rounded-lg appearance-none cursor-pointer
-                       [&::-webkit-slider-thumb]:appearance-none
-                       [&::-webkit-slider-thumb]:w-4
-                       [&::-webkit-slider-thumb]:h-4
-                       [&::-webkit-slider-thumb]:rounded-full
-                       [&::-webkit-slider-thumb]:bg-accent-purple
-                       [&::-webkit-slider-thumb]:cursor-pointer
-                       [&::-webkit-slider-thumb]:shadow-glow-purple"
-          />
-          <div className="flex justify-between text-xs text-text-muted mt-2">
-            <span>1 day</span>
-            <span>30 days</span>
-            <span>60 days</span>
-            <span>90 days</span>
-          </div>
+
+          {!isCustomHorizon ? (
+            <>
+              <input
+                type="range"
+                min="1"
+                max="90"
+                value={Math.min(horizonDays, 90)}
+                onChange={(e) => handleSliderChange(Number(e.target.value))}
+                className="w-full h-2 bg-dark-600 rounded-lg appearance-none cursor-pointer
+                           [&::-webkit-slider-thumb]:appearance-none
+                           [&::-webkit-slider-thumb]:w-4
+                           [&::-webkit-slider-thumb]:h-4
+                           [&::-webkit-slider-thumb]:rounded-full
+                           [&::-webkit-slider-thumb]:bg-accent-purple
+                           [&::-webkit-slider-thumb]:cursor-pointer
+                           [&::-webkit-slider-thumb]:shadow-glow-purple"
+              />
+              <div className="flex justify-between text-xs text-text-muted mt-2">
+                <span>1 day</span>
+                <span>30 days</span>
+                <span>60 days</span>
+                <span>90 days</span>
+              </div>
+            </>
+          ) : (
+            <div className="mt-2 max-w-xs">
+              <Input
+                label="Custom Horizon (days)"
+                type="number"
+                value={customHorizonValue}
+                onChange={handleCustomHorizonChange}
+                placeholder="e.g., 180 or 365"
+                hint="Min: 1 day, Max: 3,650 days (10 years)"
+              />
+            </div>
+          )}
         </div>
 
         {/* Simulation Paths */}
@@ -89,9 +169,9 @@ export function ForecastForm({ onSubmit, loading, initialSymbol = '' }: Forecast
               <button
                 key={count.value}
                 type="button"
-                onClick={() => setNPaths(count.value)}
+                onClick={() => handlePresetPathClick(count.value)}
                 className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-                  nPaths === count.value
+                  nPaths === count.value && !isCustomPaths
                     ? 'bg-accent-purple text-white shadow-glow-purple'
                     : 'bg-dark-600 text-text-secondary hover:text-text-primary hover:bg-dark-500 border border-dark-500'
                 }`}
@@ -102,9 +182,36 @@ export function ForecastForm({ onSubmit, loading, initialSymbol = '' }: Forecast
                 )}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={handleCustomPathClick}
+              className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                isCustomPaths
+                  ? 'bg-accent-purple text-white shadow-glow-purple'
+                  : 'bg-dark-600 text-text-secondary hover:text-text-primary hover:bg-dark-500 border border-dark-500'
+              }`}
+            >
+              Custom
+            </button>
           </div>
+
+          {/* Custom Input Field */}
+          {isCustomPaths && (
+            <div className="mt-3 max-w-xs">
+              <Input
+                label="Custom Path Count"
+                type="number"
+                value={customPathValue}
+                onChange={handleCustomPathChange}
+                placeholder="e.g., 250000"
+                hint="Min: 100, Max: 10,000,000"
+              />
+            </div>
+          )}
+
           <p className="text-xs text-text-muted mt-2">
             More paths = higher accuracy but slower. 10K recommended for most cases.
+            {nPaths >= 200000 && ' GPU acceleration recommended for 200K+ paths.'}
           </p>
         </div>
 

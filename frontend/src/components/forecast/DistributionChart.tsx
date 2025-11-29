@@ -15,9 +15,10 @@ import type { ForecastResponse } from '../../api/types';
 interface DistributionChartProps {
   data: ForecastResponse;
   height?: number;
+  currency?: string;
 }
 
-export function DistributionChart({ data, height = 300 }: DistributionChartProps) {
+export function DistributionChart({ data, height = 300, currency = 'USD' }: DistributionChartProps) {
   // Create histogram bins from percentiles or sample paths
   const createHistogramData = () => {
     const { p05, p25, p50, p75, p95 } = data.percentiles;
@@ -44,7 +45,7 @@ export function DistributionChart({ data, height = 300 }: DistributionChartProps
       return bins.map((count, i) => ({
         price: min + (i + 0.5) * binWidth,
         count,
-        range: `${formatPrice(min + i * binWidth, 'USD')} - ${formatPrice(min + (i + 1) * binWidth, 'USD')}`,
+        range: `${formatPrice(min + i * binWidth, currency)} - ${formatPrice(min + (i + 1) * binWidth, currency)}`,
       }));
     }
 
@@ -64,7 +65,7 @@ export function DistributionChart({ data, height = 300 }: DistributionChartProps
       bins.push({
         price,
         count: Math.round(count),
-        range: `${formatPrice(min + i * binWidth, 'USD')} - ${formatPrice(min + (i + 1) * binWidth, 'USD')}`,
+        range: `${formatPrice(min + i * binWidth, currency)} - ${formatPrice(min + (i + 1) * binWidth, currency)}`,
       });
     }
 
@@ -100,7 +101,7 @@ export function DistributionChart({ data, height = 300 }: DistributionChartProps
           <XAxis
             dataKey="price"
             tick={{ fontSize: 11, fill: '#64748b' }}
-            tickFormatter={(value) => formatPrice(value, 'USD')}
+            tickFormatter={(value) => formatPrice(value, currency)}
             stroke="#2a2a3a"
           />
           <YAxis

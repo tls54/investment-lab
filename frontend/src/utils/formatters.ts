@@ -75,3 +75,16 @@ export const formatRatio = (ratio: number): string => {
   if (ratio < 100) return ratio.toFixed(4);
   return ratio.toFixed(2);
 };
+
+/**
+ * Extract currency from a symbol.
+ * For crypto pairs like "BTC-USD", "ETH-GBP", extracts the currency (USD, GBP).
+ * For stocks like "AAPL", defaults to USD.
+ */
+export const getCurrencyFromSymbol = (symbol: string): string => {
+  if (symbol.includes('-')) {
+    const parts = symbol.split('-');
+    return parts[parts.length - 1]; // Get the last part after hyphen
+  }
+  return 'USD'; // Default to USD for stocks/ETFs
+};
