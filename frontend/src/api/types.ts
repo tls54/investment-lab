@@ -26,6 +26,8 @@ export interface PricePoint {
   high?: number;
   low?: number;
   close?: number;
+  currency: string;
+  source: string;
 }
 
 export interface HistoricalPrice {

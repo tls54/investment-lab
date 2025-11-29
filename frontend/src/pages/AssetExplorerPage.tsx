@@ -16,16 +16,16 @@ import { REFRESH_INTERVALS, formatRatio, formatPrice } from '../utils';
 export default function AssetExplorerPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const symbolParam = searchParams.get('symbol') || '';
-  const denomParam = searchParams.get('denom') || 'USD';
+  const denomParam = searchParams.get('denom') || 'NATIVE';
 
   const [symbol, setSymbol] = useState(symbolParam);
-  const [denomination, setDenomination] = useState(denomParam);
+  const [denomination, setDenomination] = useState(denomParam || 'NATIVE');
   const [timeRange, setTimeRange] = useState(30);
 
   const updateParams = (newSymbol: string, newDenom: string) => {
     const params: Record<string, string> = {};
     if (newSymbol) params.symbol = newSymbol;
-    if (newDenom && newDenom !== 'USD') params.denom = newDenom;
+    if (newDenom && newDenom !== 'NATIVE') params.denom = newDenom;
     setSearchParams(params);
   };
 
@@ -42,7 +42,7 @@ export default function AssetExplorerPage() {
   };
 
   const handleSwap = () => {
-    if (symbol && denomination && denomination !== 'USD') {
+    if (symbol && denomination && denomination !== 'NATIVE') {
       const temp = symbol;
       setSymbol(denomination);
       setDenomination(temp);
@@ -63,18 +63,21 @@ export default function AssetExplorerPage() {
 
   const conversionQuery = useConversionQuery(
     symbol || undefined,
-    denomination !== 'USD' ? denomination : undefined,
-    !!symbol && denomination !== 'USD'
+    denomination !== 'NATIVE' ? denomination : undefined,
+    !!symbol && denomination !== 'NATIVE'
+    // Note: Not passing currency parameters - defaults to USD on backend
+    // This ensures consistent behavior across all assets and denominations
   );
 
   const historicalConversionQuery = useHistoricalConversionQuery(
     symbol || undefined,
-    denomination !== 'USD' ? denomination : undefined,
+    denomination !== 'NATIVE' ? denomination : undefined,
     { days: timeRange },
-    !!symbol && denomination !== 'USD'
+    !!symbol && denomination !== 'NATIVE'
+    // Note: Not passing currency parameters - defaults to USD on backend
   );
 
-  const showRatioMode = denomination !== 'USD' && !!symbol;
+  const showRatioMode = denomination !== 'NATIVE' && !!symbol;
   const displayRatio = showRatioMode && conversionQuery.data ? conversionQuery.data.ratio : undefined;
 
   return (
@@ -131,6 +134,7 @@ export default function AssetExplorerPage() {
         onRetry={() => priceQuery.refetch()}
         denominationSymbol={showRatioMode ? denomination : undefined}
         ratio={displayRatio}
+        denominationCurrency={showRatioMode ? denomination.split('-')[0] : undefined}
         lastUpdated={new Date()}
       />
 

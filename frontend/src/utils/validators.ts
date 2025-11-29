@@ -7,8 +7,8 @@ export const validateSymbol = (symbol: string): { valid: boolean; error?: string
     return { valid: false, error: 'Symbol too long (max 10 characters)' };
   }
 
-  if (!/^[A-Z0-9-]+$/i.test(symbol)) {
-    return { valid: false, error: 'Invalid characters (use A-Z, 0-9, -)' };
+  if (!/^[A-Z0-9.-]+$/i.test(symbol)) {
+    return { valid: false, error: 'Invalid characters (use A-Z, 0-9, -, .)' };
   }
 
   return { valid: true };

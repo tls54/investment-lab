@@ -1,9 +1,10 @@
 export const DENOMINATIONS = [
+  { label: 'Native Currency', value: 'NATIVE', symbol: '' },
   { label: 'US Dollar', value: 'USD', symbol: '$' },
   { label: 'Bitcoin', value: 'BTC-USD', symbol: '₿' },
   { label: 'Ethereum', value: 'ETH-USD', symbol: 'Ξ' },
   { label: 'Gold ETF', value: 'GLD', symbol: 'Au' },
-  { label: 'British Pound', value: 'GBPUSD=X', symbol: '£' },
+  { label: 'British Pound', value: 'GBP', symbol: '£' },
 ] as const;
 
 export const TIME_RANGES = [

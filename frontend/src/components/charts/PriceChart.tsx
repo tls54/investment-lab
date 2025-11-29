@@ -60,6 +60,9 @@ export function PriceChart({
     date: formatTimestamp(point.timestamp, 'date'),
   }));
 
+  // Extract currency from the first price point (all should have the same currency)
+  const currency = data.prices[0]?.currency || 'USD';
+
   const prices = chartData.map((d) => d.price);
   const minPrice = Math.min(...prices);
   const maxPrice = Math.max(...prices);
@@ -95,7 +98,7 @@ export function PriceChart({
             tick={{ fontSize: 11, fill: '#64748b' }}
             tickLine={false}
             axisLine={false}
-            tickFormatter={(value) => formatPrice(value, 'USD')}
+            tickFormatter={(value) => formatPrice(value, currency)}
             width={80}
           />
           <Tooltip
@@ -107,7 +110,7 @@ export function PriceChart({
             }}
             labelStyle={{ color: '#f1f5f9' }}
             itemStyle={{ color: '#94a3b8' }}
-            formatter={(value: number) => [formatPrice(value, 'USD'), 'Price']}
+            formatter={(value: number) => [formatPrice(value, currency), 'Price']}
             labelFormatter={(label) => `Date: ${label}`}
           />
           <Area
