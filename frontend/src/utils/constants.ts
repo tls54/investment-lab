@@ -32,6 +32,9 @@ export const PATH_COUNTS = [
   { label: '10K', value: 10000 },
   { label: '50K', value: 50000 },
   { label: '100K', value: 100000 },
+  { label: '200K', value: 200000 },
+  { label: '500K', value: 500000 },
+  { label: '1M', value: 1000000 },
 ] as const;
 
 export const DEFAULT_FORECAST_CONFIG = {

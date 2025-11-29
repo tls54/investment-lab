@@ -18,6 +18,32 @@ export function ForecastForm({ onSubmit, loading, initialSymbol = '' }: Forecast
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [calibrationDays, setCalibrationDays] = useState<number>(DEFAULT_FORECAST_CONFIG.calibration_days);
   const [includePaths, setIncludePaths] = useState<boolean>(DEFAULT_FORECAST_CONFIG.include_paths);
+  const [isCustomPaths, setIsCustomPaths] = useState(false);
+  const [customPathValue, setCustomPathValue] = useState<string>('');
+
+  const handlePresetPathClick = (value: number) => {
+    setNPaths(value);
+    setIsCustomPaths(false);
+    setCustomPathValue('');
+  };
+
+  const handleCustomPathClick = () => {
+    setIsCustomPaths(true);
+    if (customPathValue) {
+      const parsed = parseInt(customPathValue, 10);
+      if (!isNaN(parsed) && parsed >= 100 && parsed <= 10000000) {
+        setNPaths(parsed);
+      }
+    }
+  };
+
+  const handleCustomPathChange = (value: string) => {
+    setCustomPathValue(value);
+    const parsed = parseInt(value, 10);
+    if (!isNaN(parsed) && parsed >= 100 && parsed <= 10000000) {
+      setNPaths(parsed);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,9 +115,9 @@ export function ForecastForm({ onSubmit, loading, initialSymbol = '' }: Forecast
               <button
                 key={count.value}
                 type="button"
-                onClick={() => setNPaths(count.value)}
+                onClick={() => handlePresetPathClick(count.value)}
                 className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-                  nPaths === count.value
+                  nPaths === count.value && !isCustomPaths
                     ? 'bg-accent-purple text-white shadow-glow-purple'
                     : 'bg-dark-600 text-text-secondary hover:text-text-primary hover:bg-dark-500 border border-dark-500'
                 }`}
@@ -102,9 +128,36 @@ export function ForecastForm({ onSubmit, loading, initialSymbol = '' }: Forecast
                 )}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={handleCustomPathClick}
+              className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                isCustomPaths
+                  ? 'bg-accent-purple text-white shadow-glow-purple'
+                  : 'bg-dark-600 text-text-secondary hover:text-text-primary hover:bg-dark-500 border border-dark-500'
+              }`}
+            >
+              Custom
+            </button>
           </div>
+
+          {/* Custom Input Field */}
+          {isCustomPaths && (
+            <div className="mt-3 max-w-xs">
+              <Input
+                label="Custom Path Count"
+                type="number"
+                value={customPathValue}
+                onChange={handleCustomPathChange}
+                placeholder="e.g., 250000"
+                hint="Min: 100, Max: 10,000,000"
+              />
+            </div>
+          )}
+
           <p className="text-xs text-text-muted mt-2">
             More paths = higher accuracy but slower. 10K recommended for most cases.
+            {nPaths >= 200000 && ' GPU acceleration recommended for 200K+ paths.'}
           </p>
         </div>
 
