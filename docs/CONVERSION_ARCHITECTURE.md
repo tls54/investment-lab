@@ -375,17 +375,37 @@ if (denomination === "NATIVE") {
 
 ## Summary
 
-**Current State:**
-- ✅ Ratio conversion works for same-currency assets
-- ✅ Triangular conversion works for CRYPTO in fetcher
-- ❌ Cross-currency ratio conversion fails (GBP vs USD)
-- ❌ Simple currency conversion doesn't exist
+**Current State (Updated 2025-11-29):**
+- ✅ Currency conversion implemented (Level 1)
+  - Simple forex conversion for AAPL in GBP, VUSA.L in USD
+  - Supports USD, GBP, EUR, JPY
+  - Both current and historical
+- ✅ Cross-currency ratio conversion implemented (Level 2)
+  - Triangular conversion in `converter.py` via USD
+  - Works for all asset types
+  - Both current and historical
+- ✅ Smart crypto matching implemented
+  - Frontend auto-constructs BTC-GBP for GBP assets, BTC-USD for USD assets
+  - Avoids unnecessary cross-currency conversion
+  - User selects "Bitcoin", system picks right pair
+- ✅ Crypto triangular conversion for current prices
+  - `yfinance_fetcher.py` supports BTC-MXN via BTC-USD × USD-MXN
+  - Works for rare currencies
 
-**To Fix VUSA.L + BTC-USD:**
-1. Implement triangular conversion in `converter.py`
-2. Fetch forex rates when currencies don't match
-3. Convert both to common currency (USD) before calculating ratio
+**Known Limitation (Future Enhancement):**
+- ⚠️ **Crypto Historical Triangular for Rare Currencies**
+  - `fetch_historical()` in `yfinance_fetcher.py` lacks triangular fallback
+  - Current price works: BTC-MXN via triangular ✅
+  - Historical fails: BTC-MXN history returns 404 if pair doesn't exist ❌
+  - **Impact:** Only affects rare currencies (MXN, ZAR, THB, etc.)
+  - **Common currencies work fine:** USD, GBP, EUR have direct pairs
+  - **To fix:** Add triangular logic to `fetch_historical()` similar to `fetch_price()`
+    - Try direct pair first (BTC-MXN)
+    - If not found, fetch BTC-USD history and USD-MXN forex rate
+    - Apply forex conversion to each historical point
+    - Note: Uses current forex rate for all historical points (less accurate)
 
-**To Support "VUSA.L in USD":**
-- Either: Use triangular conversion with USD as denomination
-- Or: Add new currency conversion endpoint
+**All Main Features Complete:**
+- VUSA.L / BTC-USD works via smart matching (uses BTC-GBP) ✅
+- AAPL in GBP works via currency conversion ✅
+- Cross-currency asset ratios work via triangular ✅
