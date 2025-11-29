@@ -125,18 +125,23 @@ class YFinanceFetcher(AssetFetcher):
         currency: str
     ) -> bool:
         """
-        Determine if triangular conversion should be attempted.
+        Determine if triangular conversion should be attempted AT THE FETCHER LEVEL.
 
-        Triangular conversion is only applicable when:
-        1. Asset is crypto (stocks/ETFs are exchange-specific)
+        Fetcher-level triangular conversion is only applicable when:
+        1. Asset is crypto (stocks/ETFs are fetched in native exchange currency only)
         2. Currency is not USD (prevents infinite loop)
+
+        Note: This is a fetcher-level restriction. The DenominationConverter layer
+        provides cross-currency support for ALL asset types (stocks, ETFs, crypto)
+        via forex rate conversion. Use converter.convert_to_currency() for stock
+        currency conversions and converter.convert() for cross-currency asset comparisons.
 
         Args:
             asset_type: Type of asset
             currency: Target currency
 
         Returns:
-            True if triangular conversion should be attempted
+            True if triangular conversion should be attempted at fetcher level
         """
         # Only for crypto
         if asset_type != AssetType.CRYPTO:
@@ -198,12 +203,25 @@ class YFinanceFetcher(AssetFetcher):
                 else:
                     asset_type = AssetType.STOCK
 
+            # Get the actual currency returned by yfinance
+            actual_currency = info.get('currency', 'USD')
+
+            # Validate currency for non-crypto assets
+            # Stocks/ETFs should only be fetched in their native exchange currency
+            if asset_type in (AssetType.STOCK, AssetType.ETF) and currency.upper() != actual_currency.upper():
+                raise SymbolNotFoundError(
+                    f"{original_symbol} in {currency.upper()} (not available at fetcher level - "
+                    f"{original_symbol} is traded in {actual_currency}. "
+                    f"Use converter.convert_to_currency() for currency conversion)",
+                    self.name
+                )
+
             price_obj = Price(
                 symbol=original_symbol,  # Use original symbol without -USD suffix
                 asset_type=asset_type,
                 price=float(current_price),
                 timestamp=datetime.now(),
-                currency=info.get('currency', 'USD'),
+                currency=actual_currency,
                 volume=float(info.get('regularMarketVolume', 0)),
                 open=float(info.get('regularMarketOpen', 0)) if info.get('regularMarketOpen') else None,
                 high_24h=float(info.get('dayHigh', 0)) if info.get('dayHigh') else None,
