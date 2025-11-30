@@ -22,6 +22,16 @@ export default function AssetExplorerPage() {
   const [denomination, setDenomination] = useState(denomParam || 'NATIVE');
   const [timeRange, setTimeRange] = useState(30);
 
+  // Determine interval based on time range
+  // 0-7 days: hourly data for better resolution
+  // 30 days: 90-minute intervals for good balance
+  // 90+ days: daily data
+  const interval = useMemo(() => {
+    if (timeRange <= 7) return '1h';
+    if (timeRange === 30) return '90m';
+    return '1d';
+  }, [timeRange]);
+
   const updateParams = (newSymbol: string, newDenom: string) => {
     const params: Record<string, string> = {};
     if (newSymbol) params.symbol = newSymbol;
@@ -57,7 +67,7 @@ export default function AssetExplorerPage() {
 
   const historicalQuery = useHistoricalQuery(
     symbol || undefined,
-    { days: timeRange },
+    { days: timeRange, interval },
     !!symbol
   );
 
@@ -87,7 +97,7 @@ export default function AssetExplorerPage() {
   const historicalConversionQuery = useHistoricalConversionQuery(
     symbol || undefined,
     actualDenomination,
-    { days: timeRange },
+    { days: timeRange, interval },
     !!symbol && !!actualDenomination
     // Smart crypto matching applied to historical data as well
   );
@@ -230,6 +240,7 @@ export default function AssetExplorerPage() {
               loading={historicalConversionQuery.isLoading}
               error={historicalConversionQuery.error}
               onRetry={() => historicalConversionQuery.refetch()}
+              timeRange={timeRange}
             />
           ) : isCurrencyConversion && historicalConversionQuery.data ? (
             // Currency conversion - transform data and show price chart
@@ -258,6 +269,7 @@ export default function AssetExplorerPage() {
               loading={historicalConversionQuery.isLoading}
               error={historicalConversionQuery.error}
               onRetry={() => historicalConversionQuery.refetch()}
+              timeRange={timeRange}
             />
           ) : (
             // Native price - show price chart
@@ -266,6 +278,7 @@ export default function AssetExplorerPage() {
               loading={historicalQuery.isLoading}
               error={historicalQuery.error}
               onRetry={() => historicalQuery.refetch()}
+              timeRange={timeRange}
             />
           )}
         </>

@@ -18,6 +18,7 @@ interface PriceChartProps {
   onRetry?: () => void;
   height?: number;
   title?: string;
+  timeRange?: number;
 }
 
 export function PriceChart({
@@ -27,6 +28,7 @@ export function PriceChart({
   onRetry,
   height = 400,
   title,
+  timeRange,
 }: PriceChartProps) {
   if (loading) {
     return (
@@ -45,19 +47,27 @@ export function PriceChart({
   }
 
   if (!data || data.prices.length === 0) {
+    // Special message for Today/24H view with no data (likely non-trading day)
+    const message = timeRange !== undefined && timeRange <= 1
+      ? 'No trading data available for today. This may be a non-trading day for this market.'
+      : 'No historical data available';
+
     return (
       <Card title={title || 'Price History'}>
         <div className="text-center py-12 text-text-muted">
-          No historical data available
+          {message}
         </div>
       </Card>
     );
   }
 
+  // For hourly data (1-7 days), show time; for daily data, show just date
+  const showTime = timeRange !== undefined && timeRange <= 7;
+
   const chartData = data.prices.map((point) => ({
     timestamp: point.timestamp,
     price: point.close || point.price,
-    date: formatTimestamp(point.timestamp, 'date'),
+    date: showTime ? formatTimestamp(point.timestamp, 'long') : formatTimestamp(point.timestamp, 'date'),
   }));
 
   // Extract currency from the first price point (all should have the same currency)

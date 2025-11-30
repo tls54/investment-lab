@@ -17,6 +17,7 @@ interface RatioChartProps {
   error?: Error | null;
   onRetry?: () => void;
   height?: number;
+  timeRange?: number;
 }
 
 export function RatioChart({
@@ -25,6 +26,7 @@ export function RatioChart({
   error,
   onRetry,
   height = 400,
+  timeRange,
 }: RatioChartProps) {
   if (loading) {
     return (
@@ -43,19 +45,27 @@ export function RatioChart({
   }
 
   if (!data || data.data.length === 0) {
+    // Special message for Today/24H view with no data (likely non-trading day)
+    const message = timeRange !== undefined && timeRange <= 1
+      ? 'No trading data available for today. This may be a non-trading day for this market.'
+      : 'No historical data available';
+
     return (
       <Card title="Ratio History">
         <div className="text-center py-12 text-text-muted">
-          No historical data available
+          {message}
         </div>
       </Card>
     );
   }
 
+  // For hourly data (1-7 days), show time; for daily data, show just date
+  const showTime = timeRange !== undefined && timeRange <= 7;
+
   const chartData = data.data.map((point) => ({
     timestamp: point.timestamp,
     ratio: point.ratio,
-    date: formatTimestamp(point.timestamp, 'date'),
+    date: showTime ? formatTimestamp(point.timestamp, 'long') : formatTimestamp(point.timestamp, 'date'),
   }));
 
   const ratios = chartData.map((d) => d.ratio);

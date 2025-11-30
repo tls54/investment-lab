@@ -167,3 +167,18 @@ class APIError(FetcherError):
         self.status_code = status_code
         self.message = message
         super().__init__(f"API error from {source} ({status_code}): {message}")
+
+
+class NoDataAvailableError(FetcherError):
+    """Raised when a valid symbol has no data available for the requested time period."""
+    def __init__(self, symbol: str, source: str, start_date: str = None, end_date: str = None):
+        self.symbol = symbol
+        self.source = source
+        self.start_date = start_date
+        self.end_date = end_date
+        msg = f"No data available for '{symbol}' from {source}"
+        if start_date and end_date:
+            msg += f" for period {start_date} to {end_date}"
+        elif start_date or end_date:
+            msg += f" for the requested period"
+        super().__init__(msg)

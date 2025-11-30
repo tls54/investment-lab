@@ -10,6 +10,8 @@ interface DateRangePickerProps {
 }
 
 const presets = [
+  { label: 'Today', days: 0 },
+  { label: '24H', days: 1 },
   { label: '7D', days: 7 },
   { label: '30D', days: 30 },
   { label: '90D', days: 90 },
