@@ -7,7 +7,7 @@ Supports stocks, ETFs, and cryptocurrencies via -USD suffix (e.g., BTC-USD).
 
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, List
+from typing import Optional, List, Dict
 import yfinance as yf
 
 from .base import AssetFetcher
@@ -298,6 +298,79 @@ class YFinanceFetcher(AssetFetcher):
                 self.name,
                 0,
                 f"Unable to fetch forex rate {from_currency}/{to_currency}: {e}"
+            )
+
+    async def _fetch_forex_historical(
+        self,
+        from_currency: str,
+        to_currency: str,
+        start: datetime,
+        end: datetime,
+        interval: str = "1d"
+    ) -> Dict[datetime.date, float]:
+        """
+        Fetch historical forex exchange rates from yfinance.
+
+        yfinance uses format: {FROM}{TO}=X for forex pairs
+        Example: USDINR=X for USD to INR historical rates
+
+        Args:
+            from_currency: Source currency (e.g., "USD")
+            to_currency: Target currency (e.g., "INR")
+            start: Start date for historical data
+            end: End date for historical data
+            interval: Time interval (default "1d")
+
+        Returns:
+            Dictionary mapping date -> forex rate
+            Example: {date(2024,1,1): 83.12, date(2024,1,2): 83.15, ...}
+
+        Raises:
+            APIError: If forex rates cannot be fetched
+        """
+        from_currency = from_currency.upper().strip()
+        to_currency = to_currency.upper().strip()
+
+        # yfinance forex format: {FROM}{TO}=X
+        forex_symbol = f"{from_currency}{to_currency}=X"
+
+        try:
+            ticker = yf.Ticker(forex_symbol)
+
+            # Fetch historical data
+            hist = ticker.history(start=start, end=end, interval=interval)
+
+            if hist.empty:
+                raise ValueError(f"No historical data available for {forex_symbol}")
+
+            # Build dictionary mapping date -> rate
+            forex_rates = {}
+            for timestamp, row in hist.iterrows():
+                date = timestamp.date()
+                rate = float(row['Close'])
+
+                if rate <= 0:
+                    logger.warning(f"Invalid forex rate {rate} for {forex_symbol} on {date}")
+                    continue
+
+                forex_rates[date] = rate
+
+            if not forex_rates:
+                raise ValueError(f"No valid forex rates found for {forex_symbol}")
+
+            logger.info(
+                f"Fetched {len(forex_rates)} historical forex rates for "
+                f"{from_currency}/{to_currency} from {start.date()} to {end.date()}"
+            )
+
+            return forex_rates
+
+        except Exception as e:
+            logger.error(f"Failed to fetch historical forex rates {forex_symbol}: {e}")
+            raise APIError(
+                self.name,
+                0,
+                f"Unable to fetch historical forex rates {from_currency}/{to_currency}: {e}"
             )
 
     async def _fetch_price_triangular(

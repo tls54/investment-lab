@@ -228,16 +228,16 @@ class TestHistoricalCurrencyConversion:
         assert result["symbol"] == "AAPL"
         assert result["native_currency"] == "USD"
         assert result["target_currency"] == "EUR"
-        assert result["conversion_method"] == "forex"
+        assert result["conversion_method"] == "forex_historical"  # Uses historical forex rates
         assert result["count"] >= 4  # At least 4 trading days in a week
         assert len(result["data"]) >= 4
 
-        # Check data points
+        # Check data points - each should have its own historical forex rate
         for point in result["data"]:
             assert point["native_currency"] == "USD"
             assert point["target_currency"] == "EUR"
             assert point["converted_price"] > 0
-            assert point["forex_rate"] > 0
+            assert point["forex_rate"] > 0  # Each point has historical rate for that date
 
     @pytest.mark.asyncio
     async def test_historical_same_currency(self, converter):
