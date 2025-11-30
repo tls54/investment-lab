@@ -132,6 +132,7 @@ export default function AssetExplorerPage() {
                 label="Asset Symbol"
                 value={symbol}
                 onChange={handleSymbolChange}
+                onSubmit={handleSymbolChange}
                 placeholder="Search AAPL, BTC-USD, MSFT..."
               />
             </div>
