@@ -57,8 +57,17 @@ export function SymbolSearch({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && inputValue && !error) {
-      onSubmit?.(inputValue);
+    if (e.key === 'Enter') {
+      e.preventDefault(); // Prevent form submission
+
+      // Smart behavior:
+      // If suggestions dropdown is showing, auto-fill first suggestion
+      if (focused && filteredSuggestions.length > 0) {
+        handleSelectSuggestion(filteredSuggestions[0].symbol);
+      } else if (inputValue && !error && onSubmit) {
+        // Otherwise, execute action via onSubmit (if provided)
+        onSubmit(inputValue);
+      }
     }
   };
 
