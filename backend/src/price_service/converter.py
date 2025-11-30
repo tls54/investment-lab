@@ -93,6 +93,48 @@ class DenominationConverter:
         fetcher = self.fetchers["yfinance"]
         return await fetcher._fetch_forex_rate(from_currency, to_currency)
 
+    def _match_forex_rate_to_date(
+        self,
+        target_date: datetime.date,
+        forex_rates: dict,
+        max_days_back: int = 7
+    ) -> Optional[float]:
+        """
+        Match a target date to the nearest forex rate.
+
+        Handles weekends and holidays by looking backwards up to max_days_back days
+        to find the most recent forex rate available.
+
+        Args:
+            target_date: The date to find a forex rate for
+            forex_rates: Dictionary mapping date -> forex rate
+            max_days_back: Maximum days to look backwards (default 7)
+
+        Returns:
+            Forex rate for the target date or nearest previous date, or None if not found
+        """
+        from datetime import timedelta
+
+        # Try exact match first
+        if target_date in forex_rates:
+            return forex_rates[target_date]
+
+        # Look backwards for the nearest previous rate
+        for days_back in range(1, max_days_back + 1):
+            previous_date = target_date - timedelta(days=days_back)
+            if previous_date in forex_rates:
+                logger.debug(
+                    f"Using forex rate from {previous_date} for {target_date} "
+                    f"({days_back} days back)"
+                )
+                return forex_rates[previous_date]
+
+        # No rate found within max_days_back
+        logger.warning(
+            f"No forex rate found for {target_date} within {max_days_back} days"
+        )
+        return None
+
     async def convert_to_currency(
         self,
         asset_symbol: str,
@@ -305,8 +347,7 @@ class DenominationConverter:
         """
         Convert historical asset prices to a different currency.
 
-        Note: Uses current forex rate for all historical points for simplicity.
-        For accurate historical conversions, historical forex rates would be needed.
+        Uses historical forex rates for accurate conversion at each time point.
 
         Args:
             asset_symbol: Symbol of asset
@@ -345,22 +386,48 @@ class DenominationConverter:
 
         native_currency = asset_history.prices[0].currency
         conversion_method = "direct"
-        forex_rate = 1.0
+        forex_rates = {}
 
         # Check if conversion needed
         if native_currency != target_currency:
-            conversion_method = "forex"
-            forex_rate = await self._fetch_forex_rate(native_currency, target_currency)
-            logger.info(f"Using forex rate {native_currency}/{target_currency}: {forex_rate}")
+            conversion_method = "forex_historical"
+            # Fetch historical forex rates for the entire period
+            forex_rates = await fetcher._fetch_forex_historical(
+                native_currency, target_currency, start, end, interval
+            )
+            logger.info(
+                f"Fetched {len(forex_rates)} historical forex rates "
+                f"for {native_currency}/{target_currency}"
+            )
 
         # Convert all price points
         data_points = []
+        skipped_count = 0
+
         for price_obj in asset_history.prices:
-            converted_price = price_obj.price * forex_rate
+            date = price_obj.timestamp.date()
+
+            if native_currency == target_currency:
+                # No conversion needed
+                forex_rate = 1.0
+                converted_price = price_obj.price
+            else:
+                # Match forex rate to this date
+                forex_rate = self._match_forex_rate_to_date(date, forex_rates)
+
+                if forex_rate is None:
+                    # Skip this data point if no forex rate available
+                    logger.warning(
+                        f"Skipping {asset_symbol} price on {date} - no forex rate available"
+                    )
+                    skipped_count += 1
+                    continue
+
+                converted_price = price_obj.price * forex_rate
 
             data_points.append({
                 "timestamp": price_obj.timestamp.isoformat(),
-                "date": price_obj.timestamp.date().isoformat(),
+                "date": date.isoformat(),
                 "native_price": price_obj.price,
                 "native_currency": native_currency,
                 "converted_price": converted_price,
@@ -373,6 +440,9 @@ class DenominationConverter:
                 "close": price_obj.close * forex_rate if price_obj.close else None
             })
 
+        if skipped_count > 0:
+            logger.warning(f"Skipped {skipped_count} data points due to missing forex rates")
+
         logger.info(f"Converted {len(data_points)} historical price points")
 
         return {
@@ -384,7 +454,7 @@ class DenominationConverter:
             "interval": interval,
             "count": len(data_points),
             "conversion_method": conversion_method,
-            "forex_rate": forex_rate,
+            "skipped_count": skipped_count,
             "data": data_points,
             "summary": {
                 "min_price": min(d["converted_price"] for d in data_points) if data_points else None,
@@ -470,7 +540,8 @@ class DenominationConverter:
         # Check if currencies match
         conversion_method = "direct"
         common_currency = None
-        forex_rates = {}  # Cache for forex rates by date
+        forex_rates_asset = {}  # Historical forex rates for asset currency -> USD
+        forex_rates_denom = {}  # Historical forex rates for denomination currency -> USD
 
         if asset_history.prices and denom_history.prices:
             asset_curr = asset_history.prices[0].currency
@@ -486,15 +557,22 @@ class DenominationConverter:
                 conversion_method = "triangular"
                 common_currency = "USD"
 
-                # Fetch current forex rates (we'll use current rates for all historical points)
-                # Note: For more accuracy, we'd need historical forex rates, but that's complex
+                # Fetch historical forex rates for the entire period
                 if asset_curr != "USD":
-                    forex_rates[asset_curr] = await self._fetch_forex_rate(asset_curr, "USD")
-                    logger.info(f"Forex rate {asset_curr}/USD: {forex_rates[asset_curr]}")
+                    forex_rates_asset = await asset_fetcher._fetch_forex_historical(
+                        asset_curr, "USD", start, end, interval
+                    )
+                    logger.info(
+                        f"Fetched {len(forex_rates_asset)} historical forex rates for {asset_curr}/USD"
+                    )
 
                 if denom_curr != "USD":
-                    forex_rates[denom_curr] = await self._fetch_forex_rate(denom_curr, "USD")
-                    logger.info(f"Forex rate {denom_curr}/USD: {forex_rates[denom_curr]}")
+                    forex_rates_denom = await denom_fetcher._fetch_forex_historical(
+                        denom_curr, "USD", start, end, interval
+                    )
+                    logger.info(
+                        f"Fetched {len(forex_rates_denom)} historical forex rates for {denom_curr}/USD"
+                    )
 
         # Match up timestamps and calculate ratios
         # We'll use the asset timestamps as the reference
@@ -505,6 +583,8 @@ class DenominationConverter:
             p.timestamp.date(): p.price
             for p in denom_history.prices
         }
+
+        skipped_count = 0
 
         for asset_price_obj in asset_history.prices:
             date = asset_price_obj.timestamp.date()
@@ -517,16 +597,36 @@ class DenominationConverter:
                 if conversion_method == "triangular":
                     asset_price_normalized = asset_price_obj.price
                     denom_price_normalized = denom_price
+                    asset_forex_rate = 1.0
+                    denom_forex_rate = 1.0
 
+                    # Get historical forex rate for asset currency on this date
                     if asset_price_obj.currency != "USD":
-                        asset_price_normalized = asset_price_obj.price * forex_rates[asset_price_obj.currency]
+                        asset_forex_rate = self._match_forex_rate_to_date(date, forex_rates_asset)
+                        if asset_forex_rate is None:
+                            logger.warning(
+                                f"Skipping {asset_symbol} on {date} - no forex rate for {asset_price_obj.currency}/USD"
+                            )
+                            skipped_count += 1
+                            continue
+                        asset_price_normalized = asset_price_obj.price * asset_forex_rate
 
+                    # Get historical forex rate for denomination currency on this date
                     if denom_history.prices[0].currency != "USD":
-                        denom_price_normalized = denom_price * forex_rates[denom_history.prices[0].currency]
+                        denom_forex_rate = self._match_forex_rate_to_date(date, forex_rates_denom)
+                        if denom_forex_rate is None:
+                            logger.warning(
+                                f"Skipping {denomination_symbol} on {date} - no forex rate for {denom_history.prices[0].currency}/USD"
+                            )
+                            skipped_count += 1
+                            continue
+                        denom_price_normalized = denom_price * denom_forex_rate
                 else:
                     # Direct conversion (same currency)
                     asset_price_normalized = asset_price_obj.price
                     denom_price_normalized = denom_price
+                    asset_forex_rate = 1.0
+                    denom_forex_rate = 1.0
 
                 ratio = asset_price_normalized / denom_price_normalized
 
@@ -541,11 +641,16 @@ class DenominationConverter:
                     "asset_price_normalized": asset_price_normalized,
                     "denomination_price_normalized": denom_price_normalized,
                     "common_currency": common_currency,
-                    "inverse_ratio": denom_price_normalized / asset_price_normalized
+                    "inverse_ratio": denom_price_normalized / asset_price_normalized,
+                    "asset_forex_rate": asset_forex_rate,
+                    "denom_forex_rate": denom_forex_rate
                 })
 
+        if skipped_count > 0:
+            logger.warning(f"Skipped {skipped_count} data points due to missing forex rates")
+
         logger.info(f"Generated {len(data_points)} conversion data points [method: {conversion_method}]")
-        
+
         return {
             "asset_symbol": asset_symbol,
             "denomination_symbol": denomination_symbol,
@@ -555,6 +660,7 @@ class DenominationConverter:
             "count": len(data_points),
             "conversion_method": conversion_method,
             "common_currency": common_currency,
+            "skipped_count": skipped_count,
             "data": data_points,
             "summary": {
                 "min_ratio": min(d["ratio"] for d in data_points) if data_points else None,
