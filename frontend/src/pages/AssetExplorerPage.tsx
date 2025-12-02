@@ -23,11 +23,13 @@ export default function AssetExplorerPage() {
   const [timeRange, setTimeRange] = useState(30);
 
   // Determine interval based on time range
-  // 0-7 days: hourly data for better resolution
-  // 30 days: 90-minute intervals for good balance
+  // Today/24H: 5-minute intervals for high resolution
+  // 7 days: 30-minute intervals
+  // 30 days: 90-minute intervals
   // 90+ days: daily data
   const interval = useMemo(() => {
-    if (timeRange <= 7) return '1h';
+    if (timeRange <= 1) return '5m';
+    if (timeRange === 7) return '30m';
     if (timeRange === 30) return '90m';
     return '1d';
   }, [timeRange]);

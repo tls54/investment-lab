@@ -39,10 +39,10 @@ export const PATH_COUNTS = [
 
 export const DEFAULT_FORECAST_CONFIG = {
   horizon_days: 30,
-  n_paths: 10000,
+  n_paths: 50000,
   calibration_days: 252,
   include_paths: true,
-  n_sample_paths: 500,
+  n_sample_paths: 2000,
 } as const;
 
 export const REFRESH_INTERVALS = {

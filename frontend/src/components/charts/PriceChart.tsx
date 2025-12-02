@@ -64,11 +64,33 @@ export function PriceChart({
   // For hourly data (1-7 days), show time; for daily data, show just date
   const showTime = timeRange !== undefined && timeRange <= 7;
 
-  const chartData = data.prices.map((point) => ({
-    timestamp: point.timestamp,
-    price: point.close || point.price,
-    date: showTime ? formatTimestamp(point.timestamp, 'long') : formatTimestamp(point.timestamp, 'date'),
-  }));
+  // Parse interval and calculate offset in milliseconds
+  // Bars are timestamped at START, but we want to show the END (when close price occurs)
+  const getIntervalOffset = (interval: string): number => {
+    const match = interval.match(/^(\d+)([mhd])$/);
+    if (!match) return 0;
+
+    const value = parseInt(match[1]);
+    const unit = match[2];
+
+    if (unit === 'm') return value * 60 * 1000; // minutes to ms
+    if (unit === 'h') return value * 60 * 60 * 1000; // hours to ms
+    if (unit === 'd') return value * 24 * 60 * 60 * 1000; // days to ms
+    return 0;
+  };
+
+  const intervalOffset = getIntervalOffset(data.interval);
+
+  const chartData = data.prices.map((point) => {
+    // Shift timestamp to end of period (when close price occurs)
+    const adjustedTimestamp = new Date(new Date(point.timestamp).getTime() + intervalOffset);
+
+    return {
+      timestamp: adjustedTimestamp.toISOString(),
+      price: point.close || point.price,
+      date: showTime ? formatTimestamp(adjustedTimestamp, 'long') : formatTimestamp(adjustedTimestamp, 'date'),
+    };
+  });
 
   // Extract currency from the first price point (all should have the same currency)
   const currency = data.prices[0]?.currency || 'USD';
@@ -102,6 +124,8 @@ export function PriceChart({
             tick={{ fontSize: 11, fill: '#64748b' }}
             tickLine={false}
             axisLine={{ stroke: '#2a2a38' }}
+            minTickGap={50}
+            interval="preserveStartEnd"
           />
           <YAxis
             domain={[minPrice - padding, maxPrice + padding]}

@@ -487,10 +487,12 @@ class YFinanceFetcher(AssetFetcher):
             yf_interval = interval
             if interval == "1h":
                 yf_interval = "1h"
-            elif interval == "5m":
-                yf_interval = "5m"
+            elif interval == "30m":
+                yf_interval = "30m"
             elif interval == "90m":
                 yf_interval = "90m"
+            elif interval == "5m":
+                yf_interval = "5m"
             elif interval == "1d":
                 yf_interval = "1d"
 
@@ -527,7 +529,10 @@ class YFinanceFetcher(AssetFetcher):
                         if end.tzinfo is None:
                             end = pytz.utc.localize(end)
 
-                    hist = hist[(hist.index >= start) & (hist.index <= end)]
+                    # Add a small buffer to end time to ensure we capture the last data point
+                    # This handles timezone rounding and market close timing issues
+                    end_with_buffer = end + timedelta(hours=1)
+                    hist = hist[(hist.index >= start) & (hist.index <= end_with_buffer)]
             else:
                 # Use start/end for daily data or longer ranges
                 logger.info(f"Using start={start.date()} end={end.date()} interval={yf_interval} for {original_symbol}")
