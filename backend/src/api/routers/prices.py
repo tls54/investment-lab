@@ -148,7 +148,7 @@ async def get_price(
 async def get_historical_prices(
     symbol: str,
     # Option 1: Simple "days" parameter
-    days: Optional[int] = Query(7, ge=1, le=365, description="Number of days of history (1–365, alternative to start/end)"),
+    days: Optional[int] = Query(7, ge=0, le=365, description="Number of days of history (0 = today, 1–365, alternative to start/end)"),
     # Option 2: Custom date range
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
