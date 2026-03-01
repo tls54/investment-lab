@@ -1,6 +1,7 @@
 import {
   AreaChart,
   Area,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -19,6 +20,8 @@ interface PriceChartProps {
   height?: number;
   title?: string;
   timeRange?: number;
+  maEnabled?: boolean;
+  maPeriod?: number;
 }
 
 export function PriceChart({
@@ -29,6 +32,8 @@ export function PriceChart({
   height = 400,
   title,
   timeRange,
+  maEnabled = false,
+  maPeriod = 20,
 }: PriceChartProps) {
   if (loading) {
     return (
@@ -92,16 +97,42 @@ export function PriceChart({
     };
   });
 
+  // Compute MA over the full dataset (including any warmup points fetched before the display window)
+  const fullData = chartData.map((d, i) => {
+    let ma: number | null = null;
+    if (maEnabled && i >= maPeriod - 1) {
+      const slice = chartData.slice(i - maPeriod + 1, i + 1);
+      ma = slice.reduce((sum, p) => sum + p.price, 0) / maPeriod;
+    }
+    return { ...d, ma };
+  });
+
+  // When MA is enabled, filter to only the display window so warmup data stays hidden
+  const rawDisplay = (() => {
+    if (!maEnabled || timeRange === undefined) return fullData;
+    if (timeRange === 0) {
+      const now = new Date();
+      const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      return fullData.filter((d) => new Date(d.timestamp) >= midnight);
+    }
+    const cutoff = new Date(Date.now() - timeRange * 24 * 60 * 60 * 1000);
+    return fullData.filter((d) => new Date(d.timestamp) >= cutoff);
+  })();
+  const displayData = rawDisplay.length > 0 ? rawDisplay : fullData;
+
   // Extract currency from the first price point (all should have the same currency)
   const currency = data.prices[0]?.currency || 'USD';
 
-  const prices = chartData.map((d) => d.price);
-  const minPrice = Math.min(...prices);
-  const maxPrice = Math.max(...prices);
+  const prices = displayData.map((d) => d.price);
+  const maVals = maEnabled
+    ? displayData.map((d) => d.ma).filter((v): v is number => v !== null)
+    : [];
+  const minPrice = Math.min(...prices, ...maVals);
+  const maxPrice = Math.max(...prices, ...maVals);
   const padding = (maxPrice - minPrice) * 0.1;
 
   // Determine if price went up or down
-  const isPositive = chartData[chartData.length - 1].price >= chartData[0].price;
+  const isPositive = displayData[displayData.length - 1].price >= displayData[0].price;
   const gradientColor = isPositive ? '#10b981' : '#ef4444';
   const strokeColor = isPositive ? '#10b981' : '#ef4444';
 
@@ -111,7 +142,7 @@ export function PriceChart({
       subtitle={`${data.count} data points`}
     >
       <ResponsiveContainer width="100%" height={height}>
-        <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+        <AreaChart data={displayData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor={gradientColor} stopOpacity={0.3} />
@@ -144,7 +175,10 @@ export function PriceChart({
             }}
             labelStyle={{ color: '#f1f5f9' }}
             itemStyle={{ color: '#94a3b8' }}
-            formatter={(value: number) => [formatPrice(value, currency), 'Price']}
+            formatter={(value: number, name: string) => {
+              if (name === 'ma') return [formatPrice(value, currency), `MA(${maPeriod})`];
+              return [formatPrice(value, currency), 'Price'];
+            }}
             labelFormatter={(label) => `Date: ${label}`}
           />
           <Area
@@ -156,6 +190,17 @@ export function PriceChart({
             dot={false}
             activeDot={{ r: 4, fill: strokeColor, strokeWidth: 0 }}
           />
+          {maEnabled && (
+            <Line
+              type="monotone"
+              dataKey="ma"
+              stroke="#f59e0b"
+              strokeWidth={1.5}
+              dot={false}
+              activeDot={{ r: 3, fill: '#f59e0b', strokeWidth: 0 }}
+              connectNulls={false}
+            />
+          )}
         </AreaChart>
       </ResponsiveContainer>
     </Card>

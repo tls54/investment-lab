@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowRightLeft } from 'lucide-react';
 import { SymbolSearch, PriceCard, DenominationPicker } from '../components/price';
@@ -21,6 +21,14 @@ export default function AssetExplorerPage() {
   const [symbol, setSymbol] = useState(symbolParam);
   const [denomination, setDenomination] = useState(denomParam || 'NATIVE');
   const [timeRange, setTimeRange] = useState(30);
+  const [maEnabled, setMaEnabled] = useState(false);
+  const [maPeriod, setMaPeriod] = useState(20);
+  const [debouncedMaPeriod, setDebouncedMaPeriod] = useState(20);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedMaPeriod(maPeriod), 400);
+    return () => clearTimeout(timer);
+  }, [maPeriod]);
 
   // Determine interval based on time range
   // Today/24H: 5-minute intervals for high resolution
@@ -30,9 +38,18 @@ export default function AssetExplorerPage() {
   const interval = useMemo(() => {
     if (timeRange <= 1) return '5m';
     if (timeRange === 7) return '30m';
-    if (timeRange === 30) return '90m';
+    if (timeRange === 30) return '1h';
     return '1d';
   }, [timeRange]);
+
+  // Extend the query window by enough days to seed the MA before the display period starts
+  const queryDays = useMemo(() => {
+    if (!maEnabled) return timeRange;
+    const intervalMinutes =
+      interval === '5m' ? 5 : interval === '30m' ? 30 : interval === '1h' ? 60 : 1440;
+    const warmupDays = Math.max(1, Math.ceil((debouncedMaPeriod * intervalMinutes) / 1440));
+    return Math.min(timeRange + warmupDays, 365);
+  }, [maEnabled, timeRange, interval, debouncedMaPeriod]);
 
   const updateParams = (newSymbol: string, newDenom: string) => {
     const params: Record<string, string> = {};
@@ -69,7 +86,7 @@ export default function AssetExplorerPage() {
 
   const historicalQuery = useHistoricalQuery(
     symbol || undefined,
-    { days: timeRange, interval },
+    { days: queryDays, interval },
     !!symbol
   );
 
@@ -99,7 +116,7 @@ export default function AssetExplorerPage() {
   const historicalConversionQuery = useHistoricalConversionQuery(
     symbol || undefined,
     actualDenomination,
-    { days: timeRange, interval },
+    { days: queryDays, interval },
     !!symbol && !!actualDenomination
     // Smart crypto matching applied to historical data as well
   );
@@ -220,14 +237,48 @@ export default function AssetExplorerPage() {
       {/* Time Range Selector */}
       {symbol && (
         <Card>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <span className="text-sm font-medium text-text-secondary">
-              Historical Data Range
-            </span>
-            <DateRangePicker
-              selectedDays={timeRange}
-              onDaysChange={setTimeRange}
-            />
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <span className="text-sm font-medium text-text-secondary">
+                Historical Data Range
+              </span>
+              <DateRangePicker
+                selectedDays={timeRange}
+                onDaysChange={setTimeRange}
+              />
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 pt-1 border-t border-border">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-text-secondary">Moving Average</span>
+                <button
+                  onClick={() => setMaEnabled(!maEnabled)}
+                  className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none ${
+                    maEnabled ? 'bg-accent-blue' : 'bg-dark-500'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                      maEnabled ? 'translate-x-5' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              {maEnabled && (
+                <div className="flex items-center gap-3 flex-1">
+                  <input
+                    type="range"
+                    min={2}
+                    max={Math.min(200, Math.max(2, 365 - timeRange))}
+                    value={maPeriod}
+                    onChange={(e) => setMaPeriod(Number(e.target.value))}
+                    className="flex-1 accent-amber-400"
+                  />
+                  <span className="text-sm font-mono text-text-secondary w-20 text-right">
+                    {maPeriod} periods
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
         </Card>
       )}
@@ -272,6 +323,8 @@ export default function AssetExplorerPage() {
               error={historicalConversionQuery.error}
               onRetry={() => historicalConversionQuery.refetch()}
               timeRange={timeRange}
+              maEnabled={maEnabled}
+              maPeriod={maPeriod}
             />
           ) : (
             // Native price - show price chart
@@ -281,6 +334,8 @@ export default function AssetExplorerPage() {
               error={historicalQuery.error}
               onRetry={() => historicalQuery.refetch()}
               timeRange={timeRange}
+              maEnabled={maEnabled}
+              maPeriod={maPeriod}
             />
           )}
         </>
