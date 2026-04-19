@@ -16,7 +16,7 @@ from ...core.config import settings
 
 # Import our fetchers
 from ...price_service.fetchers import AlphaVantageFetcher, YFinanceFetcher
-from ...price_service.models import AssetType, SymbolNotFoundError, RateLimitError, APIError
+from ...price_service.models import AssetType, SymbolNotFoundError, RateLimitError, APIError, NoDataAvailableError
 from ...price_service.converter import DenominationConverter, is_currency_code
 
 
@@ -148,7 +148,7 @@ async def get_price(
 async def get_historical_prices(
     symbol: str,
     # Option 1: Simple "days" parameter
-    days: Optional[int] = Query(7, ge=1, le=365, description="Number of days of history (1–365, alternative to start/end)"),
+    days: Optional[int] = Query(7, ge=0, le=730, description="Number of days of history (0 = today, 1–730, alternative to start/end)"),
     # Option 2: Custom date range
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
@@ -204,13 +204,20 @@ async def get_historical_prices(
                 raise HTTPException(status_code=400, detail="start_date must be before end_date")
 
             days_diff = (end - start).days
-            if days_diff > 365:
-                raise HTTPException(status_code=400, detail="Date range cannot exceed 365 days")
+            if days_diff > 730:
+                raise HTTPException(status_code=400, detail="Date range cannot exceed 730 days")
 
         else:
             # Default to "days" mode
             end = datetime.now()
-            start = end - timedelta(days=days or 7)
+
+            # Special case: days=0 means "today" (from midnight to now)
+            if days == 0:
+                # Get today at midnight (00:00:00)
+                start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            else:
+                # Regular mode: last N days (24-hour rolling window)
+                start = end - timedelta(days=days or 7)
 
         # Fetch data
         fetcher = get_fetcher(asset_type, source)
@@ -239,6 +246,19 @@ async def get_historical_prices(
             ]
         }
 
+    except NoDataAvailableError as e:
+        # Return empty data with a message instead of 404
+        # This allows the frontend to display a user-friendly message
+        return {
+            "symbol": symbol,
+            "asset_type": "STOCK",  # Default, actual type might be unknown
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+            "interval": interval,
+            "count": 0,
+            "prices": [],
+            "message": str(e)
+        }
     except SymbolNotFoundError:
         raise HTTPException(status_code=404, detail=f"Symbol '{symbol}' not found")
     except RateLimitError as e:
@@ -354,7 +374,7 @@ async def convert_historical_prices(
     asset: str,
     denomination: str,
     # Option 1: Use days parameter (simple)
-    days: Optional[int] = Query(None, ge=1, le=365, description="Number of days of history (alternative to start/end)"),
+    days: Optional[int] = Query(None, ge=1, le=730, description="Number of days of history (alternative to start/end)"),
     # Option 2: Use exact dates (flexible)
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
@@ -447,11 +467,18 @@ async def convert_historical_prices(
                     detail="Date range cannot exceed 365 days"
                 )
         
-        elif days:
+        elif days is not None:
             # Option 1: Days parameter
             end = datetime.now()
-            start = end - timedelta(days=days)
-        
+
+            # Special case: days=0 means "today" (from midnight to now)
+            if days == 0:
+                # Get today at midnight (00:00:00)
+                start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            else:
+                # Regular mode: last N days (24-hour rolling window)
+                start = end - timedelta(days=days)
+
         else:
             # Default: Last 7 days
             end = datetime.now()
@@ -477,6 +504,20 @@ async def convert_historical_prices(
                 denomination_currency=denomination_currency
             )
             return result
+
+    except NoDataAvailableError as e:
+        # Return empty data with a message instead of 404
+        # This allows the frontend to display a user-friendly message
+        return {
+            "asset_symbol": asset,
+            "denomination_symbol": denomination,
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+            "interval": interval,
+            "count": 0,
+            "data": [],
+            "message": str(e)
+        }
 
     except SymbolNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

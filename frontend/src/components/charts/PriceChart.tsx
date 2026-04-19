@@ -1,6 +1,7 @@
 import {
   AreaChart,
   Area,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -18,6 +19,9 @@ interface PriceChartProps {
   onRetry?: () => void;
   height?: number;
   title?: string;
+  timeRange?: number;
+  maEnabled?: boolean;
+  maPeriod?: number;
 }
 
 export function PriceChart({
@@ -27,6 +31,9 @@ export function PriceChart({
   onRetry,
   height = 400,
   title,
+  timeRange,
+  maEnabled = false,
+  maPeriod = 20,
 }: PriceChartProps) {
   if (loading) {
     return (
@@ -45,41 +52,97 @@ export function PriceChart({
   }
 
   if (!data || data.prices.length === 0) {
+    // Special message for Today/24H view with no data (likely non-trading day)
+    const message = timeRange !== undefined && timeRange <= 1
+      ? 'No trading data available for today. This may be a non-trading day for this market.'
+      : 'No historical data available';
+
     return (
       <Card title={title || 'Price History'}>
         <div className="text-center py-12 text-text-muted">
-          No historical data available
+          {message}
         </div>
       </Card>
     );
   }
 
-  const chartData = data.prices.map((point) => ({
-    timestamp: point.timestamp,
-    price: point.close || point.price,
-    date: formatTimestamp(point.timestamp, 'date'),
-  }));
+  // For hourly data (1-7 days), show time; for daily data, show just date
+  const showTime = timeRange !== undefined && timeRange <= 7;
+
+  // Parse interval and calculate offset in milliseconds
+  // Bars are timestamped at START, but we want to show the END (when close price occurs)
+  const getIntervalOffset = (interval: string): number => {
+    const match = interval.match(/^(\d+)([mhd])$/);
+    if (!match) return 0;
+
+    const value = parseInt(match[1]);
+    const unit = match[2];
+
+    if (unit === 'm') return value * 60 * 1000; // minutes to ms
+    if (unit === 'h') return value * 60 * 60 * 1000; // hours to ms
+    if (unit === 'd') return value * 24 * 60 * 60 * 1000; // days to ms
+    return 0;
+  };
+
+  const intervalOffset = getIntervalOffset(data.interval);
+
+  const chartData = data.prices.map((point) => {
+    // Shift timestamp to end of period (when close price occurs)
+    const adjustedTimestamp = new Date(new Date(point.timestamp).getTime() + intervalOffset);
+
+    return {
+      timestamp: adjustedTimestamp.toISOString(),
+      price: point.close || point.price,
+      date: showTime ? formatTimestamp(adjustedTimestamp, 'long') : formatTimestamp(adjustedTimestamp, 'date'),
+    };
+  });
+
+  // Compute MA over the full dataset (including any warmup points fetched before the display window)
+  const fullData = chartData.map((d, i) => {
+    let ma: number | null = null;
+    if (maEnabled && i >= maPeriod - 1) {
+      const slice = chartData.slice(i - maPeriod + 1, i + 1);
+      ma = slice.reduce((sum, p) => sum + p.price, 0) / maPeriod;
+    }
+    return { ...d, ma };
+  });
+
+  // When MA is enabled, filter to only the display window so warmup data stays hidden
+  const rawDisplay = (() => {
+    if (!maEnabled || timeRange === undefined) return fullData;
+    if (timeRange === 0) {
+      const now = new Date();
+      const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      return fullData.filter((d) => new Date(d.timestamp) >= midnight);
+    }
+    const cutoff = new Date(Date.now() - timeRange * 24 * 60 * 60 * 1000);
+    return fullData.filter((d) => new Date(d.timestamp) >= cutoff);
+  })();
+  const displayData = rawDisplay.length > 0 ? rawDisplay : fullData;
 
   // Extract currency from the first price point (all should have the same currency)
   const currency = data.prices[0]?.currency || 'USD';
 
-  const prices = chartData.map((d) => d.price);
-  const minPrice = Math.min(...prices);
-  const maxPrice = Math.max(...prices);
+  const prices = displayData.map((d) => d.price);
+  const maVals = maEnabled
+    ? displayData.map((d) => d.ma).filter((v): v is number => v !== null)
+    : [];
+  const minPrice = Math.min(...prices, ...maVals);
+  const maxPrice = Math.max(...prices, ...maVals);
   const padding = (maxPrice - minPrice) * 0.1;
 
   // Determine if price went up or down
-  const isPositive = chartData[chartData.length - 1].price >= chartData[0].price;
+  const isPositive = displayData[displayData.length - 1].price >= displayData[0].price;
   const gradientColor = isPositive ? '#10b981' : '#ef4444';
   const strokeColor = isPositive ? '#10b981' : '#ef4444';
 
   return (
     <Card
       title={title || `${data.symbol} Price History`}
-      subtitle={`${data.count} data points`}
+      subtitle={`${displayData.length} data points`}
     >
       <ResponsiveContainer width="100%" height={height}>
-        <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+        <AreaChart data={displayData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor={gradientColor} stopOpacity={0.3} />
@@ -92,6 +155,8 @@ export function PriceChart({
             tick={{ fontSize: 11, fill: '#64748b' }}
             tickLine={false}
             axisLine={{ stroke: '#2a2a38' }}
+            minTickGap={50}
+            interval="preserveStartEnd"
           />
           <YAxis
             domain={[minPrice - padding, maxPrice + padding]}
@@ -110,7 +175,10 @@ export function PriceChart({
             }}
             labelStyle={{ color: '#f1f5f9' }}
             itemStyle={{ color: '#94a3b8' }}
-            formatter={(value: number) => [formatPrice(value, currency), 'Price']}
+            formatter={(value: number, name: string) => {
+              if (name === 'ma') return [formatPrice(value, currency), `MA(${maPeriod})`];
+              return [formatPrice(value, currency), 'Price'];
+            }}
             labelFormatter={(label) => `Date: ${label}`}
           />
           <Area
@@ -122,6 +190,17 @@ export function PriceChart({
             dot={false}
             activeDot={{ r: 4, fill: strokeColor, strokeWidth: 0 }}
           />
+          {maEnabled && (
+            <Line
+              type="monotone"
+              dataKey="ma"
+              stroke="#f59e0b"
+              strokeWidth={1.5}
+              dot={false}
+              activeDot={{ r: 3, fill: '#f59e0b', strokeWidth: 0 }}
+              connectNulls={false}
+            />
+          )}
         </AreaChart>
       </ResponsiveContainer>
     </Card>

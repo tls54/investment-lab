@@ -125,7 +125,7 @@ def get_device_info() -> dict:
     return info
 
 
-def benchmark_device(device: torch.device, size: int = 1000) -> float:
+def benchmark_device(device: torch.device, size: int = 10_000) -> float:
     """
     Benchmark matrix multiplication on a device.
 
@@ -133,7 +133,7 @@ def benchmark_device(device: torch.device, size: int = 1000) -> float:
 
     Args:
         device: Device to benchmark
-        size: Matrix size (default: 1000x1000)
+        size: Matrix size (default: 10000x10000)
 
     Returns:
         Time in milliseconds for 100 matrix multiplications
@@ -184,6 +184,8 @@ if __name__ == "__main__":
     print("PyTorch Device Diagnostics")
     print("=" * 60)
 
+    size = 2_000
+
     # Get device info
     info = get_device_info()
     print("\nDevice Information:")
@@ -195,14 +197,14 @@ if __name__ == "__main__":
     device = select_device(use_gpu=True, verbose=True)
 
     print(f"\nBenchmarking {device}...")
-    time_ms = benchmark_device(device, size=1000)
-    print(f"  1000x1000 matmul x100: {time_ms:.2f}ms")
+    time_ms = benchmark_device(device, size=size)
+    print(f"  {size}x{size} matmul x100: {time_ms:.2f}ms")
 
     # Compare with CPU if we're on GPU
     if device.type != "cpu":
         print("\nBenchmarking CPU for comparison...")
-        cpu_time = benchmark_device(torch.device("cpu"), size=1000)
-        print(f"  1000x1000 matmul x100: {cpu_time:.2f}ms")
+        cpu_time = benchmark_device(torch.device("cpu"), size=size)
+        print(f"  {size}x{size} matmul x100: {cpu_time:.2f}ms")
 
         speedup = cpu_time / time_ms
         print(f"\n⚡ GPU is {speedup:.1f}x faster than CPU")

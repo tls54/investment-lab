@@ -9,9 +9,10 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 import yfinance as yf
+import pytz
 
 from .base import AssetFetcher
-from ..models import Price, HistoricalPrice, AssetType, SymbolNotFoundError, APIError
+from ..models import Price, HistoricalPrice, AssetType, SymbolNotFoundError, APIError, NoDataAvailableError
 
 
 logger = logging.getLogger(__name__)
@@ -486,16 +487,73 @@ class YFinanceFetcher(AssetFetcher):
             yf_interval = interval
             if interval == "1h":
                 yf_interval = "1h"
+            elif interval == "30m":
+                yf_interval = "30m"
+            elif interval == "90m":
+                yf_interval = "90m"
             elif interval == "5m":
                 yf_interval = "5m"
             elif interval == "1d":
                 yf_interval = "1d"
 
-            # Fetch historical data
-            hist = ticker.history(start=start, end=end, interval=yf_interval)
+            # For intraday intervals (1h, 5m), yfinance works better with 'period' parameter
+            # for short time ranges (< 60 days). For longer ranges, use start/end.
+            days_diff = (end - start).days
 
+            if yf_interval in ["1h", "5m", "15m", "30m", "90m"] and days_diff <= 59:
+                # Use period parameter for intraday data
+                # yfinance periods: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max
+                if days_diff == 0:
+                    # Today - use 1d period
+                    period = "1d"
+                elif days_diff <= 1:
+                    # Last 24 hours - use 5d to ensure we get enough data
+                    period = "5d"
+                elif days_diff <= 7:
+                    period = "5d"
+                elif days_diff <= 30:
+                    period = "1mo"
+                else:
+                    period = "3mo"
+
+                logger.info(f"Using period={period} interval={yf_interval} for {original_symbol}")
+                hist = ticker.history(period=period, interval=yf_interval)
+
+                # Filter the results to match the requested date range
+                if not hist.empty:
+                    # Convert start/end to timezone-aware if hist.index is timezone-aware
+                    if hist.index.tz is not None:
+                        # Make start/end timezone-aware (convert to UTC)
+                        if start.tzinfo is None:
+                            start = pytz.utc.localize(start)
+                        if end.tzinfo is None:
+                            end = pytz.utc.localize(end)
+
+                    # Add a small buffer to end time to ensure we capture the last data point
+                    # This handles timezone rounding and market close timing issues
+                    end_with_buffer = end + timedelta(hours=1)
+                    hist = hist[(hist.index >= start) & (hist.index <= end_with_buffer)]
+            else:
+                # Use start/end for daily data or longer ranges
+                logger.info(f"Using start={start.date()} end={end.date()} interval={yf_interval} for {original_symbol}")
+                hist = ticker.history(start=start, end=end, interval=yf_interval)
+
+            # Check if we got any data
             if hist.empty:
-                raise SymbolNotFoundError(original_symbol, self.name)
+                # Check if symbol is valid by looking at ticker info
+                info = ticker.info
+
+                # If info is empty or doesn't have basic fields, symbol doesn't exist
+                if not info or 'regularMarketPrice' not in info:
+                    raise SymbolNotFoundError(original_symbol, self.name)
+
+                # Symbol exists but no data for this period (e.g., non-trading day)
+                raise NoDataAvailableError(
+                    original_symbol,
+                    self.name,
+                    start_date=start.strftime("%Y-%m-%d"),
+                    end_date=end.strftime("%Y-%m-%d")
+                )
 
             # Determine asset type and get actual currency from yfinance
             info = ticker.info
@@ -545,7 +603,7 @@ class YFinanceFetcher(AssetFetcher):
 
             return historical
 
-        except SymbolNotFoundError:
+        except (SymbolNotFoundError, NoDataAvailableError):
             raise
         except Exception as e:
             logger.error(f"Error fetching historical data for {original_symbol}: {e}")

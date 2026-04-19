@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowRightLeft } from 'lucide-react';
 import { SymbolSearch, PriceCard, DenominationPicker } from '../components/price';
@@ -21,6 +21,56 @@ export default function AssetExplorerPage() {
   const [symbol, setSymbol] = useState(symbolParam);
   const [denomination, setDenomination] = useState(denomParam || 'NATIVE');
   const [timeRange, setTimeRange] = useState(30);
+  const [maEnabled, setMaEnabled] = useState(false);
+  const [maPeriod, setMaPeriod] = useState(20);
+  const [debouncedMaPeriod, setDebouncedMaPeriod] = useState(20);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedMaPeriod(maPeriod), 400);
+    return () => clearTimeout(timer);
+  }, [maPeriod]);
+
+  // Determine interval based on time range
+  // Today/24H: 5-minute intervals for high resolution
+  // 7 days: 30-minute intervals
+  // 30 days: 1-hour intervals
+  // 90+ days: daily data
+  const interval = useMemo(() => {
+    if (timeRange <= 1) return '5m';
+    if (timeRange === 7) return '30m';
+    if (timeRange === 30) return '1h';
+    return '1d';
+  }, [timeRange]);
+
+  // --- Pass 1: compute queryDays before queries ---
+  // We don't yet know asset_type, so use stock assumptions (conservative — crypto
+  // will over-fetch slightly on the first render, then self-correct once data loads).
+  const queryDays = useMemo(() => {
+    if (!maEnabled) return timeRange;
+    const intervalMinutes =
+      interval === '5m' ? 5 : interval === '30m' ? 30 : interval === '1h' ? 60 : 1440;
+    // Use the debounced period for warmup — fetches only what the current MA needs.
+    // Intraday: inflate 4.5× for trading-hours-only data density.
+    // Daily: inflate 1.5× for weekends/holidays.
+    // Cap: 730 days for daily (2 years) so long-range views still have warmup room;
+    //      365 days for intraday (warmup is already small in calendar-day terms).
+    const rawWarmupDays = Math.ceil((debouncedMaPeriod * intervalMinutes) / 1440);
+    const warmupDays = interval !== '1d'
+      ? Math.max(1, Math.ceil(rawWarmupDays * 4.5))
+      : Math.max(1, Math.ceil(rawWarmupDays * 1.5));
+    const cap = interval === '1d' ? 730 : 365;
+    return Math.min(timeRange + warmupDays, cap);
+  }, [maEnabled, timeRange, interval, debouncedMaPeriod]);
+
+  // Conversion queries always use daily interval. The backend's ratio conversion
+  // matches asset/denomination prices by calendar date, making sub-daily intervals
+  // meaningless (denomination price is effectively daily regardless of interval).
+  // Currency conversion forex rates are also daily in practice.
+  const conversionQueryDays = useMemo(() => {
+    if (!maEnabled) return timeRange;
+    const warmupDays = Math.max(1, Math.ceil(debouncedMaPeriod * 1.5));
+    return Math.min(timeRange + warmupDays, 730);
+  }, [maEnabled, timeRange, debouncedMaPeriod]);
 
   const updateParams = (newSymbol: string, newDenom: string) => {
     const params: Record<string, string> = {};
@@ -57,7 +107,7 @@ export default function AssetExplorerPage() {
 
   const historicalQuery = useHistoricalQuery(
     symbol || undefined,
-    { days: timeRange },
+    { days: queryDays, interval },
     !!symbol
   );
 
@@ -80,17 +130,43 @@ export default function AssetExplorerPage() {
     symbol || undefined,
     actualDenomination,
     !!symbol && !!actualDenomination
-    // Smart crypto matching: BTC becomes BTC-GBP for GBP assets, BTC-USD for USD assets
-    // This avoids unnecessary cross-currency conversion
   );
 
   const historicalConversionQuery = useHistoricalConversionQuery(
     symbol || undefined,
     actualDenomination,
-    { days: timeRange },
+    { days: conversionQueryDays, interval },
     !!symbol && !!actualDenomination
-    // Smart crypto matching applied to historical data as well
   );
+
+  // --- Pass 2: compute MA constraints using loaded data ---
+  const isCrypto = priceQuery.data?.asset_type === 'crypto';
+
+  // Use actual loaded data count when available — this correctly handles early
+  // trading-day (sparse today data), crypto 24/7, and non-standard market hours.
+  // Falls back to a formula-based estimate before data loads.
+  const estimatedDisplayPoints = useMemo(() => {
+    const loadedCount = historicalQuery.data?.prices?.length
+      ?? (historicalConversionQuery.data as any)?.data?.length;
+    if (loadedCount !== undefined) return loadedCount;
+
+    const hoursPerDay = isCrypto ? 24 : 8;
+    const daysPerWeek = isCrypto ? 7 : 5;
+    const days = timeRange === 0 ? 1 : timeRange;
+    const activeDays = days * (daysPerWeek / 7);
+    if (interval === '5m')  return Math.round(activeDays * hoursPerDay * 12);
+    if (interval === '30m') return Math.round(activeDays * hoursPerDay * 2);
+    if (interval === '1h')  return Math.round(activeDays * hoursPerDay);
+    return Math.round(activeDays);
+  }, [timeRange, interval, isCrypto, historicalQuery.data, historicalConversionQuery.data]);
+
+  // Cap at 75% of display points (so MA line covers most of the chart) and hard-cap at 200.
+  const maxMaPeriod = Math.min(200, Math.max(2, Math.floor(estimatedDisplayPoints * 0.75)));
+
+  // Clamp maPeriod state when maxMaPeriod shrinks (e.g. switching to shorter time range)
+  useEffect(() => {
+    if (maPeriod > maxMaPeriod) setMaPeriod(maxMaPeriod);
+  }, [maxMaPeriod]);
 
   // Detect if conversion data is currency conversion or ratio conversion
   const isCurrencyConversion = conversionQuery.data && 'converted_price' in conversionQuery.data;
@@ -208,14 +284,51 @@ export default function AssetExplorerPage() {
       {/* Time Range Selector */}
       {symbol && (
         <Card>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <span className="text-sm font-medium text-text-secondary">
-              Historical Data Range
-            </span>
-            <DateRangePicker
-              selectedDays={timeRange}
-              onDaysChange={setTimeRange}
-            />
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <span className="text-sm font-medium text-text-secondary">
+                Historical Data Range
+              </span>
+              <DateRangePicker
+                selectedDays={timeRange}
+                onDaysChange={setTimeRange}
+              />
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 pt-1 border-t border-border">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-text-secondary">Moving Average</span>
+                <button
+                  onClick={() => setMaEnabled(!maEnabled)}
+                  className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none ${
+                    maEnabled ? 'bg-accent-blue' : 'bg-dark-500'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                      maEnabled ? 'translate-x-5' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              {maEnabled && (
+                <div className="flex items-center gap-3 flex-1">
+                  <input
+                    type="range"
+                    min={2}
+                    max={maxMaPeriod}
+                    value={Math.min(maPeriod, maxMaPeriod)}
+                    onChange={(e) => setMaPeriod(Number(e.target.value))}
+                    className="flex-1 accent-amber-400"
+                  />
+                  <span className="text-sm font-mono text-text-secondary w-32 text-right">
+                    {Math.min(maPeriod, maxMaPeriod)}/{maxMaPeriod}{' '}
+                    <span className="text-text-muted">
+                      {interval === '5m' ? '5min' : interval === '30m' ? '30min' : interval === '1h' ? '1hr' : '1day'}
+                    </span>
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
         </Card>
       )}
@@ -230,6 +343,9 @@ export default function AssetExplorerPage() {
               loading={historicalConversionQuery.isLoading}
               error={historicalConversionQuery.error}
               onRetry={() => historicalConversionQuery.refetch()}
+              timeRange={timeRange}
+              maEnabled={maEnabled}
+              maPeriod={Math.min(debouncedMaPeriod, maxMaPeriod)}
             />
           ) : isCurrencyConversion && historicalConversionQuery.data ? (
             // Currency conversion - transform data and show price chart
@@ -258,6 +374,9 @@ export default function AssetExplorerPage() {
               loading={historicalConversionQuery.isLoading}
               error={historicalConversionQuery.error}
               onRetry={() => historicalConversionQuery.refetch()}
+              timeRange={timeRange}
+              maEnabled={maEnabled}
+              maPeriod={Math.min(debouncedMaPeriod, maxMaPeriod)}
             />
           ) : (
             // Native price - show price chart
@@ -266,6 +385,9 @@ export default function AssetExplorerPage() {
               loading={historicalQuery.isLoading}
               error={historicalQuery.error}
               onRetry={() => historicalQuery.refetch()}
+              timeRange={timeRange}
+              maEnabled={maEnabled}
+              maPeriod={Math.min(debouncedMaPeriod, maxMaPeriod)}
             />
           )}
         </>

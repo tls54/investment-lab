@@ -80,7 +80,7 @@ export function ForecastForm({ onSubmit, loading, initialSymbol = '' }: Forecast
       n_paths: nPaths,
       calibration_days: calibrationDays,
       include_paths: includePaths,
-      n_sample_paths: 100,
+      n_sample_paths: DEFAULT_FORECAST_CONFIG.n_sample_paths,
     });
   };
 

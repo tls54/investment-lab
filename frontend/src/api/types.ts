@@ -38,6 +38,7 @@ export interface HistoricalPrice {
   end_date: string;
   interval: string;
   count: number;
+  message?: string; // Optional message for no data scenarios
 }
 
 // Currency conversion response (simple forex conversion)
@@ -99,11 +100,12 @@ export interface HistoricalConversion {
   conversion_method: 'direct' | 'triangular';
   common_currency: string;
   data: HistoricalConversionPoint[];
-  summary: {
+  summary?: {
     min_ratio: number;
     max_ratio: number;
     avg_ratio: number;
   };
+  message?: string; // Optional message for no data scenarios
 }
 
 export interface ForecastRequest {
