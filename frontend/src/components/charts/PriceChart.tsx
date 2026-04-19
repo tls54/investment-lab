@@ -139,7 +139,7 @@ export function PriceChart({
   return (
     <Card
       title={title || `${data.symbol} Price History`}
-      subtitle={`${data.count} data points`}
+      subtitle={`${displayData.length} data points`}
     >
       <ResponsiveContainer width="100%" height={height}>
         <AreaChart data={displayData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>

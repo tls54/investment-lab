@@ -9,6 +9,7 @@ Also supports simple currency conversion (AAPL in GBP).
 
 from typing import Optional, List, Tuple
 from datetime import datetime
+import bisect
 import logging
 
 from .models import Price, HistoricalPrice, AssetType
@@ -578,73 +579,79 @@ class DenominationConverter:
         # We'll use the asset timestamps as the reference
         data_points = []
 
-        # Create a dict for quick denomination price lookup
-        denom_prices = {
-            p.timestamp.date(): p.price
-            for p in denom_history.prices
-        }
+        # Build sorted lists for nearest-timestamp denomination price lookup.
+        # Using timestamp (not date) preserves intraday granularity when both
+        # assets have sub-daily data (e.g. crypto/crypto or intraday stock/crypto).
+        _denom_ts = [p.timestamp for p in denom_history.prices]
+        _denom_px = [p.price for p in denom_history.prices]
+
+        def _nearest_denom_price(ts: datetime) -> float:
+            idx = bisect.bisect_left(_denom_ts, ts)
+            if idx == 0:
+                return _denom_px[0]
+            if idx >= len(_denom_ts):
+                return _denom_px[-1]
+            before, after = _denom_ts[idx - 1], _denom_ts[idx]
+            return _denom_px[idx] if (ts - before) > (after - ts) else _denom_px[idx - 1]
 
         skipped_count = 0
 
         for asset_price_obj in asset_history.prices:
             date = asset_price_obj.timestamp.date()
+            denom_price = _nearest_denom_price(asset_price_obj.timestamp)
 
-            # Find matching denomination price
-            if date in denom_prices:
-                denom_price = denom_prices[date]
+            # Normalize prices if cross-currency
+            if conversion_method == "triangular":
+                asset_price_normalized = asset_price_obj.price
+                denom_price_normalized = denom_price
+                asset_forex_rate = 1.0
+                denom_forex_rate = 1.0
 
-                # Normalize prices if cross-currency
-                if conversion_method == "triangular":
-                    asset_price_normalized = asset_price_obj.price
-                    denom_price_normalized = denom_price
-                    asset_forex_rate = 1.0
-                    denom_forex_rate = 1.0
+                # Get historical forex rate for asset currency on this date
+                if asset_price_obj.currency != "USD":
+                    asset_forex_rate = self._match_forex_rate_to_date(date, forex_rates_asset)
+                    if asset_forex_rate is None:
+                        logger.warning(
+                            f"Skipping {asset_symbol} on {date} - no forex rate for {asset_price_obj.currency}/USD"
+                        )
+                        skipped_count += 1
+                        continue
+                    asset_price_normalized = asset_price_obj.price * asset_forex_rate
 
-                    # Get historical forex rate for asset currency on this date
-                    if asset_price_obj.currency != "USD":
-                        asset_forex_rate = self._match_forex_rate_to_date(date, forex_rates_asset)
-                        if asset_forex_rate is None:
-                            logger.warning(
-                                f"Skipping {asset_symbol} on {date} - no forex rate for {asset_price_obj.currency}/USD"
-                            )
-                            skipped_count += 1
-                            continue
-                        asset_price_normalized = asset_price_obj.price * asset_forex_rate
+                # Get historical forex rate for denomination currency on this date
+                if denom_history.prices[0].currency != "USD":
+                    denom_forex_rate = self._match_forex_rate_to_date(date, forex_rates_denom)
+                    if denom_forex_rate is None:
+                        logger.warning(
+                            f"Skipping {denomination_symbol} on {date} - no forex rate for {denom_history.prices[0].currency}/USD"
+                        )
+                        skipped_count += 1
+                        continue
+                    denom_price_normalized = denom_price * denom_forex_rate
+            else:
+                # Direct conversion (same currency)
+                asset_price_normalized = asset_price_obj.price
+                denom_price_normalized = denom_price
+                asset_forex_rate = 1.0
+                denom_forex_rate = 1.0
 
-                    # Get historical forex rate for denomination currency on this date
-                    if denom_history.prices[0].currency != "USD":
-                        denom_forex_rate = self._match_forex_rate_to_date(date, forex_rates_denom)
-                        if denom_forex_rate is None:
-                            logger.warning(
-                                f"Skipping {denomination_symbol} on {date} - no forex rate for {denom_history.prices[0].currency}/USD"
-                            )
-                            skipped_count += 1
-                            continue
-                        denom_price_normalized = denom_price * denom_forex_rate
-                else:
-                    # Direct conversion (same currency)
-                    asset_price_normalized = asset_price_obj.price
-                    denom_price_normalized = denom_price
-                    asset_forex_rate = 1.0
-                    denom_forex_rate = 1.0
+            ratio = asset_price_normalized / denom_price_normalized
 
-                ratio = asset_price_normalized / denom_price_normalized
-
-                data_points.append({
-                    "timestamp": asset_price_obj.timestamp.isoformat(),
-                    "date": date.isoformat(),
-                    "ratio": ratio,
-                    "asset_price": asset_price_obj.price,
-                    "asset_currency": asset_price_obj.currency,
-                    "denomination_price": denom_price,
-                    "denomination_currency": denom_history.prices[0].currency,
-                    "asset_price_normalized": asset_price_normalized,
-                    "denomination_price_normalized": denom_price_normalized,
-                    "common_currency": common_currency,
-                    "inverse_ratio": denom_price_normalized / asset_price_normalized,
-                    "asset_forex_rate": asset_forex_rate,
-                    "denom_forex_rate": denom_forex_rate
-                })
+            data_points.append({
+                "timestamp": asset_price_obj.timestamp.isoformat(),
+                "date": date.isoformat(),
+                "ratio": ratio,
+                "asset_price": asset_price_obj.price,
+                "asset_currency": asset_price_obj.currency,
+                "denomination_price": denom_price,
+                "denomination_currency": denom_history.prices[0].currency,
+                "asset_price_normalized": asset_price_normalized,
+                "denomination_price_normalized": denom_price_normalized,
+                "common_currency": common_currency,
+                "inverse_ratio": denom_price_normalized / asset_price_normalized,
+                "asset_forex_rate": asset_forex_rate,
+                "denom_forex_rate": denom_forex_rate
+            })
 
         if skipped_count > 0:
             logger.warning(f"Skipped {skipped_count} data points due to missing forex rates")

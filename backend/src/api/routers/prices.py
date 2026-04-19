@@ -148,7 +148,7 @@ async def get_price(
 async def get_historical_prices(
     symbol: str,
     # Option 1: Simple "days" parameter
-    days: Optional[int] = Query(7, ge=0, le=365, description="Number of days of history (0 = today, 1–365, alternative to start/end)"),
+    days: Optional[int] = Query(7, ge=0, le=730, description="Number of days of history (0 = today, 1–730, alternative to start/end)"),
     # Option 2: Custom date range
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
@@ -204,8 +204,8 @@ async def get_historical_prices(
                 raise HTTPException(status_code=400, detail="start_date must be before end_date")
 
             days_diff = (end - start).days
-            if days_diff > 365:
-                raise HTTPException(status_code=400, detail="Date range cannot exceed 365 days")
+            if days_diff > 730:
+                raise HTTPException(status_code=400, detail="Date range cannot exceed 730 days")
 
         else:
             # Default to "days" mode
@@ -374,7 +374,7 @@ async def convert_historical_prices(
     asset: str,
     denomination: str,
     # Option 1: Use days parameter (simple)
-    days: Optional[int] = Query(None, ge=1, le=365, description="Number of days of history (alternative to start/end)"),
+    days: Optional[int] = Query(None, ge=1, le=730, description="Number of days of history (alternative to start/end)"),
     # Option 2: Use exact dates (flexible)
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
